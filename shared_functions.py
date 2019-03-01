@@ -1,0 +1,551 @@
+# @Author: riener
+# @Date:   2018-12-19T17:26:54+01:00
+# @Filename: shared_functions.py
+# @Last modified by:   riener
+# @Last modified time: 2019-03-01T14:46:03+01:00
+
+import numpy as np
+import warnings
+
+
+def determine_significance(amp, fwhm, rms):
+    """
+    Calculate the equivalent SNR of the fitted Gaussian.
+
+    Gaussians with an equivalent SNR < 5 should be discarded.
+
+    The area of the Gaussian is:
+    area_gauss = amp * fwhm / ((1. / np.sqrt(2*np.pi)) * 2*np.sqrt(2*np.log(2)))
+
+    This is then compared to the integrated rms, with 2*fwhm being a good
+    approximation for the width of the emission line
+
+    significance = area_gauss / (np.sqrt(2*fwhm) * rms)
+
+    combining all constants yields a factor of 0.75269184778925247
+    """
+    return amp * np.sqrt(fwhm) * 0.75269184778925247 / rms
+
+
+def area_of_gaussian(amp, fwhm):
+    """
+    Calculates the integrated area of the Gaussian.
+
+    area_gauss = amp * fwhm / ((1. / np.sqrt(2*np.pi)) * 2*np.sqrt(2*np.log(2)))
+
+    combining all constants in the denominator yields a factor of 0.93943727869965132
+    """
+    return amp * fwhm / 0.93943727869965132
+
+
+def gaussian(amp, fwhm, mean, x):
+    gauss = amp * np.exp(-4. * np.log(2) * (x-mean)**2 / fwhm**2)
+    return gauss
+
+
+def combined_gaussian(amps, fwhms, means, x):
+    if len(amps) > 0.:
+        for i in range(len(amps)):
+            gauss = gaussian(amps[i], fwhms[i], means[i], x)
+            if i == 0:
+                combined_gauss = gauss
+            else:
+                combined_gauss += gauss
+    else:
+        combined_gauss = np.zeros(len(x))
+    return combined_gauss
+
+
+def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aicc=False):
+    """Determine the goodness of fit (reduced chi2, AICc).
+
+    Parameters
+    ----------
+    data : list
+        Original data.
+    best_fit_final : list
+        Fit to the original data.
+    errors : list
+        Root-mean-square noise for each channel.
+    ncomps_fit : int
+        Number of Gaussian components used for the fit.
+    mask : type
+        Mask specifying which regions of the spectrum should be used.
+    get_aicc : type
+        If set to `True`, the AICc value will be returned in addition to the
+        reduced chi2 value.
+
+    Returns
+    -------
+    rchi2 : float
+        Reduced chi2 value.
+    aicc : float
+        (optional). AICc value is returned if get_aicc is set to `True`.
+
+    """
+    if type(errors) is not np.ndarray:
+        errors = np.ones(len(data)) * errors
+    # TODO: check if mask is set to None everywehere there is no mask
+    if mask is None:
+        mask = np.ones(len(data))
+        mask = mask.astype('bool')
+    elif len(mask) == 0:
+        mask = np.ones(len(data))
+        mask = mask.astype('bool')
+    elif np.count_nonzero(mask) == 0:
+        mask = np.ones(len(data))
+        mask = mask.astype('bool')
+    chi2 = np.sum((data[mask] - best_fit_final[mask])**2 / errors[mask]**2)
+    k = 3*ncomps_fit  # degrees of freedom
+    N = len(data[mask])
+    rchi2 = chi2 / (N - k)
+    if get_aicc:
+        aicc = chi2 + 2*k + (2*k**2 + 2*k) / (N - k - 1)
+        return rchi2, aicc
+    return rchi2
+
+
+def gauss_mask(means, fwhms, nChannels, chi2_mask=None,
+               range_slices=False, padChannels=10):
+    mask = np.zeros(nChannels)
+    for mean, fwhm in zip(means, fwhms):
+        if 2*fwhm < fwhm + padChannels:
+            pad = fwhm + padChannels
+        else:
+            pad = 2*fwhm
+        low, upp = int(mean - pad), int(mean + pad) + 2
+        mask[low:upp] = 1
+
+    if chi2_mask is not None:
+        for (low, upp) in chi2_mask:
+            mask[low:upp] = 0
+    mask = mask.astype('bool')
+
+    if range_slices:
+        indices = np.where(mask == True)[0]
+        nonzero = np.append(np.zeros(1), (indices[1:] - indices[:-1]) - 1)
+        nonzero = nonzero.astype('int')
+        indices2 = np.argwhere(nonzero != 0)
+        breakpoints = [indices[0]]
+        if indices2.size != 0:
+            for i in indices2:
+                breakpoints.append(indices[i[0] - 1])
+                breakpoints.append(indices[i[0]])
+        breakpoints.append(indices[-1])
+
+        ranges = []
+        for i in range(int(len(breakpoints) / 2)):
+            low, upp = breakpoints[i*2], breakpoints[i*2 + 1]
+            ranges.append((low, upp))
+        return mask, ranges
+    else:
+        return mask
+
+
+def add_subtracted_nan_ranges(nan_ranges, ranges):
+    """Add masked out regions to signal or noise spike ranges.
+    """
+    for nan_lower, nan_upper in nan_ranges:
+        for i, (lower, upper) in enumerate(ranges):
+            if lower > nan_lower:
+                add_value = (nan_upper - nan_lower)
+                ranges[i] = [lower + add_value, upper + add_value]
+    return ranges
+
+
+def max_consecutive_channels(nChannels, p_limit):
+    """Determine the maximum number of random consecutive positive/negative channels.
+
+    Calculate the number of consecutive positive or negative channels,
+    whose probability of occurring due to random chance in a spectrum
+    is less than p_limit.
+
+    Parameters
+    ----------
+    nChannels : int
+        Number of channels of the spectrum.
+    p_limit : float
+        Maximum probability for consecutive positive/negative channels being
+        due to chance.
+
+    Returns
+    -------
+    consec_channels : int
+        Number of consecutive positive/negative channels that have a probability
+        less than p_limit to be due to chance.
+
+    """
+
+    import numpy as np
+
+    for consec_channels in range(1, 30):
+        a = np.zeros((consec_channels, consec_channels))
+        for i in range(consec_channels - 1):
+            a[i, 0] = a[i, i + 1] = 0.5
+        a[consec_channels - 1, consec_channels - 1] = 1.0
+        if np.linalg.matrix_power(a, nChannels - 1)[0, consec_channels - 1] < p_limit:
+            return consec_channels
+
+
+def determine_peaks(spectrum, peak='both', amp_threshold=None):
+    import numpy as np
+
+    if (peak == 'both') or (peak == 'positive'):
+        clipped_spectrum = spectrum.clip(max=0)
+        # Create an array that is 1 where a is 0, and pad each end with an extra 0.
+        iszero = np.concatenate(
+            ([0], np.equal(clipped_spectrum, 0).view(np.int8), [0]))
+        absdiff = np.abs(np.diff(iszero))
+        # Runs start and end where absdiff is 1.
+        ranges = np.where(absdiff == 1)[0].reshape(-1, 2)
+
+    if (peak == 'both') or (peak == 'negative'):
+        clipped_spectrum = spectrum.clip(min=0)
+        # Create an array that is 1 where a is 0, and pad each end with an extra 0.
+        iszero = np.concatenate(
+            ([0], np.equal(clipped_spectrum, 0).view(np.int8), [0]))
+        absdiff = np.abs(np.diff(iszero))
+        if peak == 'both':
+            # Runs start and end where absdiff is 1.
+            ranges = np.append(
+                ranges, np.where(absdiff == 1)[0].reshape(-1, 2), axis=0)
+        else:
+            ranges = np.where(absdiff == 1)[0].reshape(-1, 2)
+
+    if amp_threshold is not None:
+        if peak == 'positive':
+            mask = spectrum > abs(amp_threshold)
+        elif peak == 'negative':
+            mask = spectrum < -abs(amp_threshold)
+        else:
+            mask = np.abs(spectrum) > abs(amp_threshold)
+
+        if np.count_nonzero(mask) == 0:
+            return np.array([]), np.array([])
+
+        peak_mask = np.split(mask, ranges[:, 1])
+        mask_true = np.array([any(array) for array in peak_mask[:-1]])
+
+        ranges = ranges[mask_true]
+        if peak == 'positive':
+            amp_vals = np.array([max(spectrum[low:upp]) for low, upp in ranges])
+        elif peak == 'negative':
+            amp_vals = np.array([min(spectrum[low:upp]) for low, upp in ranges])
+        else:
+            amp_vals = np.array(
+                np.sign(spectrum[low])*max(np.abs(spectrum[low:upp]))
+                for low, upp in ranges)
+        #  TODO: check if sorting really necessary??
+        sort_indices = np.argsort(amp_vals)[::-1]
+        return amp_vals[sort_indices], ranges[sort_indices]
+    else:
+        sort_indices = np.argsort(ranges[:, 0])
+        ranges = ranges[sort_indices]
+
+        consecutive_channels = ranges[:, 1] - ranges[:, 0]
+        return consecutive_channels, ranges
+
+
+def mask_channels(nChannels, ranges, padChannels=None, remove_intervals=None):
+    import numpy as np
+
+    mask = np.zeros(nChannels)
+
+    for (lower, upper) in ranges:
+        if padChannels is not None:
+            lower = max(0, lower - padChannels)
+            upper = min(nChannels, upper + padChannels)
+        mask[lower:upper] = 1
+
+    if remove_intervals is not None:
+        for (low, upp) in remove_intervals:
+            mask[low:upp] = 0
+
+    return mask.astype('bool')
+
+
+# def mask_channels(nChannels, ranges, padChannels=None, remove_intervals=None):
+#     import numpy as np
+#
+#     mask = np.zeros(nChannels)
+#
+#     for (lower, upper) in ranges:
+#         pad_channels = int((upper - lower) / 2.)
+#         lower = max(0, lower - pad_channels)
+#         upper = upper + pad_channels
+#         mask[lower:upper] = 1
+#
+#     if remove_intervals is not None:
+#         for (low, upp) in remove_intervals:
+#             mask[low:upp] = 0
+#
+#     return mask.astype('bool')
+
+
+def intervals_where_mask_is_true(mask):
+    """Determine intervals where a 1D binary mask is True.
+
+    Parameters
+    ----------
+    mask : type
+        Binary mask.
+
+    Returns
+    -------
+    ranges : list
+        List of slice intervals [(low, upp), ...] indicating where the mask
+        has `True` values.
+
+    """
+    indices = np.where(mask == True)[0]
+    if indices.size == 0:
+        return []
+
+    nonzero = np.append(np.zeros(1), (indices[1:] - indices[:-1]) - 1)
+    nonzero = nonzero.astype('int')
+    indices_nonzero = np.argwhere(nonzero != 0)
+
+    breakpoints = [indices[0]]
+    if indices_nonzero.size != 0:
+        for i in indices_nonzero:
+            breakpoints.append(indices[i[0] - 1] + 1)
+            breakpoints.append(indices[i[0]])
+    breakpoints.append(indices[-1] + 1)
+
+    ranges = []
+    for i in range(int(len(breakpoints) / 2)):
+        low, upp = breakpoints[i*2], breakpoints[i*2 + 1]
+        if low != upp:
+            ranges.append([low, upp])
+        # if there is one single positive channel at the end
+        # TODO: check if this may cause problems
+        else:
+            ranges.append([low, upp + 1])
+
+    return ranges
+
+
+def add_buffer_to_intervals(ranges, nChannels, padChannels=5):
+    """Extend given intervals to the left and right by a number of channels.
+
+    Parameters
+    ----------
+    ranges : list
+        List of intervals [(low, upp), ...].
+    nChannels : int
+        Number of channels of the spectrum.
+    padChannels : int
+        Number of channels by which an interval (low, upp) gets extended to
+        the left and right.
+
+    Returns
+    -------
+    ranges_new : list
+        New list of intervals [(low, upp), ...] extended by padChannels to the
+        left and right.
+
+    """
+    ranges_new, intervals = ([] for i in range(2))
+    for i, (low, upp) in enumerate(ranges):
+        low, upp = low - padChannels, upp + padChannels
+        if low < 0:
+            low = 0
+        if upp > nChannels:
+            upp = nChannels
+
+        intervals.append((low, upp))
+
+    # merge intervals if they are overlapping
+    sorted_by_lower_bound = sorted(intervals, key=lambda tup: tup[0])
+
+    for higher in sorted_by_lower_bound:
+        if not ranges_new:
+            ranges_new.append(higher)
+        else:
+            lower = ranges_new[-1]
+            # test for intersection between lower and higher:
+            # we know via sorting that lower[0] <= higher[0]
+            if higher[0] <= lower[1]:
+                upper_bound = max(lower[1], higher[1])
+                ranges_new[-1] = (lower[0], upper_bound)  # replace by merged interval
+            else:
+                ranges_new.append(higher)
+
+    return ranges_new
+
+
+def mask_covering_gaussians(means, fwhms, nChannels, remove_intervals=None,
+                            range_slices=False, padChannels=10, minChannels=100):
+    ranges = []
+    for mean, fwhm in zip(means, fwhms):
+        if 2*fwhm < fwhm + padChannels:
+            pad = fwhm + padChannels
+        else:
+            pad = 2*fwhm
+        ranges.append((int(mean - pad), int(mean + pad) + 2))
+
+    mask = mask_channels(nChannels, ranges, remove_intervals=remove_intervals)
+
+    ranges = intervals_where_mask_is_true(mask)
+
+    if padChannels is not None:
+        i = 0
+        while np.count_nonzero(mask) < minChannels:
+            i += 1
+            ranges = add_buffer_to_intervals(ranges, nChannels, padChannels=i*padChannels)
+            mask = mask_channels(nChannels, ranges, remove_intervals=remove_intervals)
+            if 2*i*padChannels >= minChannels:
+                break
+
+    if range_slices:
+        return mask, ranges
+
+    return mask
+
+
+def check_if_intervals_contain_signal(spectrum, rms, ranges, snr=3.,
+                                      significance=5.):
+    """Check if selected intervals contain positive signal.
+
+    Parameters
+    ----------
+    spectrum : list
+        Description of parameter `spectrum`.
+    rms : float
+        Root-mean-square noise of the spectrum.
+    ranges : list
+        List of intervals [(low, upp), ...] that were identified as containing
+        positive signal.
+    snr : float
+        If maximum intensity value of interval (low, upp) is smaller than
+        snr * rms the interval is not retained
+    significance : float
+        Additional threshold check for the S/N that compares the sum of the
+        intensities to the square root of the channels times the noise. This
+        helps to remove narrow noise spikes or insignificant positive intensity
+        peaks.
+
+    Returns
+    -------
+    ranges_new : list
+        New list of intervals [(low, upp), ...] that contain positive signal.
+
+    """
+    # TODO: incorporate minChannelsSnr, rethink snr - 0.5 ?
+    ranges_new = []
+    for low, upp in ranges:
+        if np.max(spectrum[low:upp]) > snr*rms:
+            # if sum(spectrum[low:upp] > (snr - 0.5)*rms) >= minChannelsSnr:
+            if np.sum(spectrum[low:upp]) / (np.sqrt(upp - low)*rms) > significance:
+                ranges_new.append([low, upp])
+    return ranges_new
+
+
+def get_signal_ranges(spectrum, rms, maxConsecutiveChannels=14,
+                      padChannels=5, snr=3., significance=5.,
+                      minChannels=100, remove_intervals=None):
+    import numpy as np
+
+    nChannels = len(spectrum)
+
+    max_amp_vals, ranges = determine_peaks(
+        spectrum, peak='positive', amp_threshold=snr*rms)
+
+    ranges = check_if_intervals_contain_signal(
+        spectrum, rms, ranges, snr=snr, significance=significance)
+
+    if not ranges:
+        return []
+    i = 0
+    # TODO: rework this, what if max. ranges [0, nChannels] is reached?
+    # more intelligent selection of padChannels?
+    if padChannels is not None:
+        while True:
+            i += 1
+            ranges = add_buffer_to_intervals(ranges, nChannels, padChannels=i*padChannels)
+            mask_signal_new = mask_channels(nChannels, ranges, remove_intervals=remove_intervals)
+            ranges = intervals_where_mask_is_true(mask_signal_new)
+            if (np.count_nonzero(mask_signal_new) >= minChannels) or \
+                    (2*i*padChannels >= minChannels):
+                return ranges
+    return ranges
+
+
+def get_noise_spike_ranges(spectrum, rms, noiseSpikeSnr=3.5):
+    maxampvals, ranges = determine_peaks(
+        spectrum, peak='negative', amp_threshold=noiseSpikeSnr*rms)
+    # TODO: check what happens if ranges is an empty list
+    return ranges.tolist()
+
+
+def correct_rms(averageRms=None, idx=None):
+    """Workaround for issues with bad baseline that make the noise computation meaningless.
+    """
+    idxInfo = ''
+    if idx is not None:
+        idxInfo = 'with index {} '.format(idx)
+    if averageRms is not None:
+        warnings.warn('Could not determine noise for spectrum {}(baseline issue?). Assuminge average rms value of {}'.format(idxInfo, averageRms))
+        return averageRms
+    else:
+        warnings.warn('Could not determine noise for spectrum {}(baseline issue?). Masking out spectrum.'.format(idxInfo))
+        return np.nan
+
+
+def get_rms_noise(spectrum, maxConsecutiveChannels=14, padChannels=5, averageRms=None, idx=None):
+    from astropy.stats import median_absolute_deviation
+    import numpy as np
+
+    nChannels = len(spectrum)
+    consecutive_channels, ranges = determine_peaks(spectrum)
+    mask = consecutive_channels > maxConsecutiveChannels
+    mask_1 = mask_channels(nChannels, ranges[mask], padChannels=padChannels)
+
+    if np.count_nonzero(~mask_1) == 0:
+        return correct_rms(averageRms=averageRms, idx=idx)
+
+    spectrum_consecs_removed = spectrum[~mask_1]
+    negative_indices = (spectrum_consecs_removed < 0.0)
+    spectrum_negative_values = spectrum_consecs_removed[negative_indices]
+
+    reflected_noise = np.concatenate((spectrum_negative_values,
+                                      np.abs(spectrum_negative_values)))
+    MAD = median_absolute_deviation(reflected_noise)
+
+    spectrum_mask1_vals_zero = np.copy(spectrum)
+    spectrum_mask1_vals_zero[mask_1] = 0
+    inds_high_amps = np.where(np.abs(spectrum_mask1_vals_zero) > 5*MAD)[0]
+    if inds_high_amps.size > 0:
+        inds_ranges = np.digitize(inds_high_amps, ranges[:, 0]) - 1
+        ranges = ranges[inds_ranges]
+
+        mask_2 = mask_channels(nChannels, ranges, padChannels=padChannels)
+
+        mask_total = mask_1 + mask_2
+    else:
+        mask_total = mask_1
+
+    # TODO: change this from 0 to a minimum of required channels?
+    if np.count_nonzero(~mask_total) == 0:
+        return correct_rms(averageRms=averageRms, idx=idx)
+
+    rms = np.sqrt(np.sum(spectrum[~mask_total]**2) / np.size(spectrum[~mask_total]))
+
+    if np.count_nonzero(~mask_total) < 0.2*len(spectrum):
+        if averageRms is not None:
+            if rms < 0.1*averageRms:
+                return correct_rms(averageRms=averageRms, idx=idx)
+        else:
+            return correct_rms(averageRms=averageRms, idx=idx)
+    return rms
+
+
+def timer(mode='start', start_time=None):
+    """"""
+    import time
+
+    if mode == 'start':
+        return time.time()
+    elif mode == 'stop':
+        print('\nrequired run time: {:.4f} s'.format(
+            time.time() - start_time))
