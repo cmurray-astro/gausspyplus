@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: AGD_decomposer.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:29:00+01:00
+# @Last modified time: 2019-03-01T15:33:19+01:00
 
 #!/usr/bin/python
 # Robert Lindner
@@ -111,7 +111,7 @@ def func(x, *args):
     return yout
 
 
-def initialGuess(vel, data, errors=None, alpha=None, plot=False, mode='c',
+def initialGuess(vel, data, errors=None, alpha=None, plot=False, mode='conv',
                  verbose=False, SNR_thresh=5.0, BLFrac=0.1, SNR2_thresh=5.0,
                  deblend=True):
     """Find initial parameter guesses (AGD algorithm).
@@ -249,7 +249,7 @@ def initialGuess(vel, data, errors=None, alpha=None, plot=False, mode='c',
         for i in range(FF_matrix.shape[0]):
             for j in range(FF_matrix.shape[1]):
                 FF_matrix[i, j] = np.exp(-(offsets[i]-offsets[j])**2/2./(FWHMs[j] / 2.355)**2)
-        amps_new = lstsq(FF_matrix, amps, rcond=None)[0]
+        amps_new = lstsq(FF_matrix, amps)[0]
         if np.all(amps_new > 0):
             amps = amps_new
 
@@ -262,7 +262,7 @@ def initialGuess(vel, data, errors=None, alpha=None, plot=False, mode='c',
 
 def AGD(vel, data, errors, idx=None, signal_ranges=None,
         noise_spike_ranges=None, improve_fitting_dict=None,
-        alpha1=None, alpha2=None, plot=False, mode='c', verbose=False,
+        alpha1=None, alpha2=None, plot=False, mode='conv', verbose=False,
         SNR_thresh=5.0, BLFrac=0.1, SNR2_thresh=5.0, deblend=True,
         perform_final_fit=True, phase='one'):
     """ Autonomous Gaussian Decomposition."""

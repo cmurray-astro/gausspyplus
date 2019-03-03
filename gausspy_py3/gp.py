@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: gp.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T13:46:53+01:00
+# @Last modified time: 2019-03-01T16:06:03+01:00
 
 import os
 import pickle
@@ -20,17 +20,17 @@ from . import ioHDF5
 class GaussianDecomposer(object):
     def __init__(self, filename=None, phase='one'):
         if filename:
-            temp = pickle.load(open(filename))
+            temp = pickle.load(open(filename, 'rb'), encoding='latin1')
             self.p = temp.p
         else:
             self.p = {'alpha1': None, 'alpha2': None, 'training_results': None,
                       'improve_fitting_dict': None, 'useCpus': None,
                       'phase': 'one', 'SNR2_thresh': 5., 'SNR_thresh': 5.,
-                      'deblend': True, 'mode': 'python', 'BLFrac': 0.1, 'verbose': False, 'plot': False,
+                      'deblend': True, 'mode': 'conv', 'BLFrac': 0.1, 'verbose': False, 'plot': False,
                       'perform_final_fit': True}
 
     def load_training_data(self, filename):
-        self.p['training_data'] = pickle.load(open(filename))
+        self.p['training_data'] = pickle.load(open(filename, 'rb'), encoding='latin1')
 
     def load_hdf5_data(self, filename):
         return ioHDF5.fromHDF5(filename)
@@ -39,7 +39,7 @@ class GaussianDecomposer(object):
         ioHDF5.toHDF5(data, filename)
 
     def train(self, alpha1_initial=None, alpha2_initial=None, plot=False,
-              verbose=False, mode='python', learning_rate=0.9, eps=0.25, MAD=0.1):
+              verbose=False, mode='conv', learning_rate=0.9, eps=0.25, MAD=0.1):
         """Solve for optimal values of alpha1 (and alpha2) using training data."""
         if (((self.p['phase'] == 'one') and (not alpha1_initial)) or
            ((self.p['phase'] == 'two') and ((not alpha1_initial) or (not alpha1_initial)))):
@@ -160,7 +160,7 @@ class GaussianDecomposer(object):
                 output_data['means_fit'].append(offsets)
 
                 # Save initial guesses if something was found
-                ncomps_initial = len(result['initial_parameters']) / 3
+                ncomps_initial = int(len(result['initial_parameters']) / 3)
                 amps_initial = result['initial_parameters'][0:ncomps_initial] if ncomps_initial > 0 else []
                 fwhms_initial = result['initial_parameters'][ncomps_initial:2*ncomps_initial] if ncomps_initial > 0 else []
                 offsets_initial = result['initial_parameters'][2*ncomps_initial:3*ncomps_initial] if ncomps_initial > 0 else []

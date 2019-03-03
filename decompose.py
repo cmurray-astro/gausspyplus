@@ -2,7 +2,7 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:43:57+01:00
+# @Last modified time: 2019-03-01T17:05:06+01:00
 
 from __future__ import print_function
 
@@ -248,7 +248,7 @@ class GaussPyDecompose(object):
         string_gausspy_plus = ''
         if self.fitting['improve_fitting']:
             #  TODO: change to items() in Python 3
-            for key, value in self.fitting.iteritems():
+            for key, value in self.fitting.items():
                 string_gausspy_plus += str('\n{}: {}').format(key, value)
         else:
             string_gausspy_plus += str(
@@ -298,7 +298,7 @@ class GaussPyDecompose(object):
                     "fwhms_initial", "means_initial"]:
             dct_initial_guesses[key] = self.decomposition[key]
 
-        pickle.dump(dct_initial_guesses, open(pathname, 'w'))
+        pickle.dump(dct_initial_guesses, open(pathname, 'wb'), protocol=2)
         self.say(">> saved as '{}' in {}".format(filename, self.decompDirname))
 
     def save_final_results(self):
@@ -332,7 +332,7 @@ class GaussPyDecompose(object):
 
         filename = '{}{}_fit_fin.pickle'.format(self.filename, self.suffix)
         pathname = os.path.join(self.decompDirname, filename)
-        pickle.dump(dct_final_guesses, open(pathname, 'w'))
+        pickle.dump(dct_final_guesses, open(pathname, 'wb'), protocol=2)
         self.say(">> saved as '{}' in {}".format(filename, self.decompDirname))
 
     def load_final_results(self, pathToDecomp):
@@ -409,7 +409,7 @@ class GaussPyDecompose(object):
         array = np.zeros([z, y, x], dtype=np.float32)
         nSpectra = len(self.decomposition['N_components'])
 
-        for idx in xrange(nSpectra):
+        for idx in range(nSpectra):
             ncomps = self.decomposition['N_components'][idx]
             if ncomps is None:
                 continue
@@ -429,7 +429,7 @@ class GaussPyDecompose(object):
                 array[:, yi, xi] = gaussian(
                     amps[j], fwhms[j], means[j], self.channels)
             elif mode == 'integrated_intensity' and ncomps > 0:
-                for j in xrange(ncomps):
+                for j in range(ncomps):
                     integrated_intensity = area_of_gaussian(
                         amps[j], fwhms[j] * self.velocity_increment)
                     channel = int(round(means[j]))
@@ -512,7 +512,7 @@ class GaussPyDecompose(object):
             velocity, e_amp, e_vel_disp, e_velocity, e_int_tot = (
                 [] for i in range(14))
 
-        for idx in xrange(length):
+        for idx in range(length):
             ncomps = self.decomposition['N_components'][idx]
 
             #  do not continue if spectrum was masked out, was not fitted,
@@ -541,7 +541,7 @@ class GaussPyDecompose(object):
                     e_amp / self.main_beam_efficiency for e_amp in fit_e_amps]
                 error /= self.main_beam_efficiency
 
-            for j in xrange(ncomps):
+            for j in range(ncomps):
                 amp_value = fit_amps[j]
                 e_amp_value = fit_e_amps[j]
                 fwhm_value = fit_fwhms[j] * self.velocity_increment

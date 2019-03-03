@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: training.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:50:20+01:00
+# @Last modified time: 2019-03-01T15:09:01+01:00
 
 import os
 import pickle
@@ -163,7 +163,7 @@ class GaussPyTraining(object):
         pickle.dump(data, open(self.pathToTrainingSet, 'w'))
 
     def gausspy_train_alpha(self):
-        import gausspy.gp as gp
+        from .gausspy_py3 import gp as gp
 
         g = gp.GaussianDecomposer()
 

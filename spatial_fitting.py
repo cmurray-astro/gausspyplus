@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:49:18+01:00
+# @Last modified time: 2019-03-01T17:14:16+01:00
 
 import collections
 import datetime
@@ -559,7 +559,7 @@ class SpatialFitting(object):
             else:
                 self.list_n_refit.append([count_refitted])
 
-            if self.min_p < 4/6:
+            if self.min_p < 3/6:
                 self.save_final_results()
             else:
                 self.check_continuity()

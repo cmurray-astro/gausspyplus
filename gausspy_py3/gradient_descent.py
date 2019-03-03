@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: gradient_descent.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T13:19:36+01:00
+# @Last modified time: 2019-03-01T16:07:21+01:00
 
 
 
@@ -49,8 +49,8 @@ def compare_parameters(guess_params, true_params, verbose=False):
     true_params  = list of 3xN parameters for the N true Gaussians """
 
     # Extract parameters
-    n_true = len(true_params) / 3
-    n_guess = len(guess_params) / 3
+    n_true = int(len(true_params) / 3)
+    n_guess = int(len(guess_params) / 3)
     guess_amps = guess_params[0:n_guess]
     guess_FWHMs = guess_params[n_guess:2 * n_guess]
     guess_offsets = guess_params[2*n_guess:3 * n_guess]
@@ -109,7 +109,7 @@ def single_training_example(kwargs):
 def objective_function(alpha1, alpha2, training_data, SNR_thresh=5.,
                        SNR2_thresh=0., deblend=True, phase=None, data=None,
                        errors=None, means=None, vel=None, FWHMs=None,
-                       amps=None,  verbose=False, plot=False, mode='python'):
+                       amps=None,  verbose=False, plot=False, mode='conv'):
 
     # Obtain dictionary of current-scope keywords/arguments
     frame = inspect.currentframe()
@@ -163,7 +163,7 @@ def train(objective_function=objective_function, training_data=None,
           alpha1_initial=None, alpha2_initial=None, iterations=500,
           MAD=None, eps=None, learning_rate=None, p=None, window_size=10,
           iterations_for_convergence=10, plot=False, phase=None, SNR2_thresh=0.,
-          SNR_thresh=5., verbose=False, mode='python',
+          SNR_thresh=5., verbose=False, mode='conv',
           improve_fitting_dict=None):
     """
     alpha1_initial =
