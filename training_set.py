@@ -2,8 +2,10 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: training_set.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:49:42+01:00
+# @Last modified time: 2019-03-04T11:37:09+01:00
 
+import ast
+import configparser
 import itertools
 import multiprocessing
 import os
@@ -14,16 +16,15 @@ import sys
 
 import numpy as np
 
+from astropy import units as u
 from astropy.io import fits
-from astropy.modeling import models, fitting, optimizers, Parameter
+from astropy.modeling import models, fitting, optimizers
 
 from tqdm import tqdm
 
-from gausspyplus.shared_functions import gaussian, determine_significance,\
-    get_rms_noise, max_consecutive_channels, get_noise_spike_ranges,\
-    get_signal_ranges, mask_channels, goodness_of_fit
+from gausspyplus.shared_functions import gaussian, determine_significance, max_consecutive_channels, get_noise_spike_ranges, get_signal_ranges, mask_channels, goodness_of_fit
 
-from gausspyplus.spectral_cube_functions import determine_noise
+from gausspyplus.spectral_cube_functions import determine_noise, remove_additional_axes
 
 if (sys.version_info < (3, 0)):
     raise Exception('Script has to be run in Python 3 environment.')
@@ -46,13 +47,13 @@ def mp_decompose_one(i):
     return result
 
 
-def mp_func(total, useCpus=None):
+def mp_func(total, use_nCpus=None):
     # Multiprocessing code
     ncpus = multiprocessing.cpu_count()
-    if useCpus is None:
-        useCpus = int(0.75 * ncpus)
-    print('using {} out of {} cpus'.format(useCpus, ncpus))
-    p = multiprocessing.Pool(useCpus, mp_init_worker)
+    if use_nCpus is None:
+        use_nCpus = int(0.75 * ncpus)
+    print('using {} out of {} cpus'.format(use_nCpus, ncpus))
+    p = multiprocessing.Pool(use_nCpus, mp_init_worker)
 
     try:
         results_list = []
@@ -77,49 +78,22 @@ def mp_func(total, useCpus=None):
 
 
 class GaussPyTrainingSet(object):
-    def __init__(self, pathToFile):
+    def __init__(self, pathToFile, configFile=''):
         self.pathToFile = pathToFile
-        self.dirname = os.path.dirname(pathToFile)
-        self.file = os.path.basename(pathToFile)
-        self.filename, self.fileExtension = os.path.splitext(self.file)
         self.pathToTrainingSet = None
 
-        self.header = None
-
-        if self.fileExtension == '.fits':
-            hdu = fits.open(pathToFile)[0]
-            self.data = hdu.data
-            self.header = hdu.header
-            if len(self.data.shape) == 4:
-                self.correct_stokes()
-            self.nChannels = self.data.shape[0]
-        else:
-            with open(os.path.join(pathToFile), "rb") as pickle_file:
-                dctData = pickle.load(pickle_file, encoding='latin1')
-            self.data = dctData['data_list']
-            self.nChannels = len(self.data[0])
-
-        self.channels = np.arange(self.nChannels)
         self.trainingSet = True
-        self.randomSeed = None
         self.numberSpectra = 5
         self.order = 6
         self.snr = 3
         self.significance = 5
-        self.minFwhm, self.maxFwhm = 1., None
-        if self.minFwhm is not None:
-            self.minStddev = self.minFwhm/2.355
-        else:
-            self.minStddev = None
-        if self.maxFwhm is not None:
-            self.maxStddev = self.maxFwhm/2.355
-        else:
-            self.maxStddev = None
+        self.min_fwhm = 1.
+        self.max_fwhm = None
         self.pLimit = 0.025
         self.signalMask = True
         self.padChannels = 5
         self.minChannels = 100
-        self.noiseSpikeSnr = 4.
+        self.snr_noise_spike = 4.
         # TODO: also define lower limit for rchi2 to prevent overfitting?
         self.rchi2_limit = 1.5
         self.use_all = False
@@ -127,19 +101,64 @@ class GaussPyTrainingSet(object):
 
         self.verbose = True
         self.suffix = ''
+        self.use_nCpus = None
+        self.random_seed = 111
 
-    def correct_stokes(self):
-        self.data = np.squeeze(self.data, axis=(0,))
-        for keyword in ['NAXIS4', 'CRPIX4', 'CDELT4', 'CRVAL4', 'CTYPE4']:
-            if keyword in self.header.keys():
-                self.header.remove(keyword)
+        if configFile:
+            self.get_values_from_config_file(configFile)
+
+    def get_values_from_config_file(self, configFile):
+        config = configparser.ConfigParser()
+        config.read(configFile)
+
+        for key, value in config['training'].items():
+            try:
+                setattr(self, key, ast.literal_eval(value))
+            except ValueError:
+                if key == 'vel_unit':
+                    value = u.Unit(value)
+                    setattr(self, key, value)
+                else:
+                    raise Exception('Could not parse parameter {} from config file'.format(key))
+
+    def initialize(self):
+        self.minStddev = None
+        if self.min_fwhm is not None:
+            self.minStddev = self.min_fwhm/2.355
+
+        self.maxStddev = None
+        if self.max_fwhm is not None:
+            self.maxStddev = self.max_fwhm/2.355
+
+        self.dirname = os.path.dirname(self.pathToFile)
+        self.file = os.path.basename(self.pathToFile)
+        self.filename, self.fileExtension = os.path.splitext(self.file)
+
+        self.header = None
+
+        if self.fileExtension == '.fits':
+            hdu = fits.open(self.pathToFile)[0]
+            self.data = hdu.data
+            self.header = hdu.header
+
+            self.data, self.header = remove_additional_axes(
+                self.data, self.header)
+            self.nChannels = self.data.shape[0]
+        else:
+            with open(os.path.join(self.pathToFile), "rb") as pickle_file:
+                dctData = pickle.load(pickle_file, encoding='latin1')
+            self.data = dctData['data_list']
+            self.nChannels = len(self.data[0])
+
+        self.channels = np.arange(self.nChannels)
 
     def decompose_spectra(self):
+        self.initialize()
         if self.verbose:
             print("decompose {} spectra ...".format(self.numberSpectra))
 
-        if self.randomSeed is not None:
-            random.seed(self.randomSeed)
+        if self.random_seed is not None:
+            random.seed(self.random_seed)
 
         if self.trainingSet:
             data = {}
@@ -204,23 +223,6 @@ class GaussPyTrainingSet(object):
             pathToFile = os.path.join(self.pathToTrainingSet, filename)
             pickle.dump(data, open(pathToFile, 'wb'), protocol=2)
 
-    # def noise_and_signal_mask_determination(self, spectrum):
-    #     rms = get_rms_noise(
-    #         spectrum, maxConsecutiveChannels=self.maxConsecutiveChannels)
-    #     if self.signalMask:
-    #         noise_spike_ranges = get_noise_spike_ranges(
-    #             spectrum, rms, noiseSpikeSnr=self.noiseSpikeSnr)
-    #         signal_ranges = get_signal_ranges(
-    #             spectrum, rms, snr=self.snr, maxConsecutiveChannels=self.maxConsecutiveChannels,
-    #             padChannels=self.padChannels,
-    #             significance=self.significance,
-    #             minChannels=self.minChannels,
-    #             remove_intervals=noise_spike_ranges)
-    #     else:
-    #         signal_ranges = []
-    #
-    #     return rms, signal_ranges
-
     def decompose(self, index, i):
         if self.header:
             location = self.locations[index]
@@ -241,7 +243,7 @@ class GaussPyTrainingSet(object):
             return None
 
         noise_spike_ranges = get_noise_spike_ranges(
-            spectrum, rms, noiseSpikeSnr=self.noiseSpikeSnr)
+            spectrum, rms, snr_noise_spike=self.snr_noise_spike)
         if self.mask_out_ranges:
             noise_spike_ranges += self.mask_out_ranges
 
@@ -250,18 +252,6 @@ class GaussPyTrainingSet(object):
             maxConsecutiveChannels=self.maxConsecutiveChannels,
             padChannels=self.padChannels, minChannels=self.minChannels,
             remove_intervals=noise_spike_ranges)
-
-        # if not np.isnan(spectrum).all():
-        #     if np.isnan(spectrum).any():
-        #         mask_nans = np.isnan(spectrum)
-        #         nans = np.logical_and(mask_nans, self.mask_omit)
-        #         if not (spectrum[~nans] >= 0).all():
-        #             rms, signal_ranges = self.noise_and_signal_mask_determination(spectrum[~nans])
-        #             spectrum[nans] = np.random.randn(len(spectrum[nans])) * rms
-        #     elif not (spectrum >= 0).all():
-        #         rms, signal_ranges = self.noise_and_signal_mask_determination(spectrum)
-        #     else:
-        #         return None
 
         if signal_ranges:
             signal_mask = mask_channels(self.nChannels, signal_ranges)

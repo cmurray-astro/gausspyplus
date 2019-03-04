@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: plotting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:45:25+01:00
+# @Last modified time: 2019-03-04T11:18:08+01:00
 
 import itertools
 import os
@@ -97,7 +97,8 @@ def pickle_load_file(pathToFile):
 
 
 def get_list_indices(data, subcube=False, pixelRange=None,
-                     listIndices=None, nSpectra=None):
+                     listIndices=None, nSpectra=None, random_seed=111):
+    random.seed(random_seed)
     # TODO: incorporate the nan_mask in this scheme
     grid_layout = None
     if subcube or (pixelRange is not None):
@@ -241,7 +242,7 @@ def scale_fontsize(rowsize):
 def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
                  trainingSet=False, cols=5, rowsize=7.75, rowbreak=50, dpi=50,
                  nSpectra=None, suffix='', subcube=False, pixelRange=None,
-                 listIndices=None, plotGaussians=True, plotResidual=True, plotSignalRanges=True):
+                 listIndices=None, plotGaussians=True, plotResidual=True, plotSignalRanges=True, random_seed=111):
 
     print("\nMake plots...")
 
@@ -271,7 +272,7 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
         header = None
 
     listIndices, nSpectra, grid_layout = get_list_indices(
-        data, subcube=subcube, pixelRange=pixelRange, listIndices=listIndices, nSpectra=nSpectra)
+        data, subcube=subcube, pixelRange=pixelRange, listIndices=listIndices, nSpectra=nSpectra, random_seed=random_seed)
 
     cols, rows, rowbreak, colsize, multiple_pdfs = get_figure_params(
         nChannels, nSpectra, cols, rowsize, rowbreak, grid_layout, subcube=subcube)

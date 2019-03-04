@@ -2,26 +2,29 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T17:05:06+01:00
+# @Last modified time: 2019-03-04T11:50:36+01:00
 
 from __future__ import print_function
 
-import logging
+# import logging
+import ast
+import configparser
 import os
 import pickle
-import sys
+# import sys
 import warnings
 
 import numpy as np
 
-from datetime import datetime
+# from datetime import datetime
 from astropy import units as u
-from astropy.io import fits
+# from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs import WCS
 
 from gausspyplus.shared_functions import gaussian, area_of_gaussian, combined_gaussian
 from gausspyplus.spectral_cube_functions import change_header, save_fits, correct_header, update_header
+from gausspyplus.miscellaneous_functions import set_up_logger
 
 # if (sys.version_info >= (3, 0)):
 #     raise Exception('Script has to be run in Python 2 environment.')
@@ -65,7 +68,7 @@ class GaussPyDecompose(object):
         S/N threshold used for the original spectrum.
     snr2Thresh : float
         S/N threshold used for the second derivate of the smoothed spectrum.
-    useCpus : int
+    use_nCpus : int
         Number of CPUs used in the decomposition. By default 75% of all CPUs on the machine are used.
     fitting : dct
         Description of attribute `fitting`.
@@ -79,16 +82,10 @@ class GaussPyDecompose(object):
         Default is 'True'. Set to 'False' if descriptive statements should not be printed in the terminal.
     suffix : str
         Suffix for filename of the decomposition results.
-    removeHeaderKeywords : list
-        Specify keywords that should be removed from the header.
-    headerComments : list
-        Specify comments that should be included in the header.
-    restoreNans : bool
-        Default is 'True'. Set to 'False' if NaN values should not be restored in the FITS files created from the decomposition results.
     log_output : bool
         Default is 'True'. Set to 'False' if terminal output should not be logged.
     """
-    def __init__(self, pathToPickleFile):
+    def __init__(self, pathToPickleFile, configFile=''):
         self.pathToPickleFile = pathToPickleFile
         self.dirname = os.path.dirname(pathToPickleFile)
         self.file = os.path.basename(pathToPickleFile)
@@ -100,52 +97,82 @@ class GaussPyDecompose(object):
         self.twoPhaseDecomposition = True
         self.trainingSet = False
         self.saveInitialGuesses = False
-        self.alpha1, self.alpha2, self.snrThresh, self.snr2Thresh, self.useCpus = (
-                None for i in range(5))
-        self.fitting = {
-            'improve_fitting': False, 'min_fwhm': 1., 'max_fwhm': None,
-            'min_offset': 2., 'snr': 3., 'snr_fit': None, 'significance': 5.,
-            'snr_negative': None, 'rchi2_limit': 1.5, 'max_amp_factor': 1.1,
-            'negative_residual': True, 'broad': True, 'blended': True, 'fwhm_factor': 1.5}
+        self.alpha1 = None
+        self.alpha2 = None
+        self.snrThresh = None
+        self.snr2Thresh = None
+
+        self.improve_fitting = True
+        self.min_fwhm = 1.
+        self.max_fwhm = None
+        self.min_offset = 2.
+        self.snr = 3.
+        self.snr_fit = None
+        self.significance = 5.
+        self.snr_negative = None
+        self.rchi2_limit = 1.5
+        self.max_amp_factor = 1.1
+        self.refit_residual = True
+        self.refit_broad = True
+        self.refit_blended = True
+        self.fwhm_factor = 1.5
+
         self.main_beam_efficiency = None
         self.vel_unit = u.km / u.s
         self.testing = False
         self.verbose = True
         self.suffix = ''
-        self.removeHeaderKeywords = []
-        self.headerComments = None
-        self.restoreNans = True
         self.log_output = True
+        self.use_nCpus = None
 
-    def set_up_logger(self):
-        #  setting up logger
-        now = datetime.now()
-        date_string = "{}{}{}-{}{}{}".format(
-            now.year,
-            str(now.month).zfill(2),
-            str(now.day).zfill(2),
-            str(now.hour).zfill(2),
-            str(now.minute).zfill(2),
-            str(now.second).zfill(2))
+        if configFile:
+            self.get_values_from_config_file(configFile)
 
-        dirname = os.path.join(self.parentDirname, 'gpy_log')
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-        filename = os.path.splitext(os.path.basename(self.filename))[0]
+    def get_values_from_config_file(self, configFile):
+        config = configparser.ConfigParser()
+        config.read(configFile)
 
-        logname = os.path.join(dirname, '{}_decompose_{}.log'.format(
-            date_string, filename))
-        logging.basicConfig(filename=logname,
-                            filemode='a',
-                            format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                            datefmt='%H:%M:%S',
-                            level=logging.DEBUG)
+        for key, value in config['decomposition'].items():
+            try:
+                setattr(self, key, ast.literal_eval(value))
+            except ValueError:
+                if key == 'vel_unit':
+                    value = u.Unit(value)
+                    setattr(self, key, value)
+                else:
+                    raise Exception('Could not parse parameter {} from config file'.format(key))
 
-        self.logger = logging.getLogger(__name__)
+    # def set_up_logger(self):
+    #     #  setting up logger
+    #     now = datetime.now()
+    #     date_string = "{}{}{}-{}{}{}".format(
+    #         now.year,
+    #         str(now.month).zfill(2),
+    #         str(now.day).zfill(2),
+    #         str(now.hour).zfill(2),
+    #         str(now.minute).zfill(2),
+    #         str(now.second).zfill(2))
+    #
+    #     dirname = os.path.join(self.parentDirname, 'gpy_log')
+    #     if not os.path.exists(dirname):
+    #         os.makedirs(dirname)
+    #     filename = os.path.splitext(os.path.basename(self.filename))[0]
+    #
+    #     logname = os.path.join(dirname, '{}_decompose_{}.log'.format(
+    #         date_string, filename))
+    #     logging.basicConfig(filename=logname,
+    #                         filemode='a',
+    #                         format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+    #                         datefmt='%H:%M:%S',
+    #                         level=logging.DEBUG)
+    #
+    #     self.logger = logging.getLogger(__name__)
 
     def getting_ready(self):
         if self.log_output:
-            self.set_up_logger()
+            self.logger = set_up_logger(
+                self.parentDirname, self.filename, method='g+_decomposition')
+            # self.set_up_logger()
 
         string = 'GaussPy decomposition'
         banner = len(string) * '='
@@ -162,6 +189,9 @@ class GaussPyDecompose(object):
     def initialize_data(self):
         self.check_settings()
         self.getting_ready()
+
+        self.fitting = {
+            'improve_fitting': self.improve_fitting, 'min_fwhm': self.min_fwhm, 'max_fwhm': self.max_fwhm, 'min_offset': self.min_offset, 'snr': self.snr, 'snr_fit': self.snr_fit, 'significance': self.significance, 'snr_negative': self.snr_negative, 'rchi2_limit': self.rchi2_limit, 'max_amp_factor': self.max_amp_factor, 'negative_residual': self.refit_residual, 'broad': self.refit_broad, 'blended': self.refit_blended, 'fwhm_factor': self.fwhm_factor}
 
         self.say("\npickle load '{}'...".format(self.file))
 
@@ -197,6 +227,15 @@ class GaussPyDecompose(object):
                 os.makedirs(self.decompDirname)
 
     def check_settings(self):
+        if self.snr_negative is None:
+            self.snr_negative = self.snr
+        if self.snr_fit is None:
+            self.snr_fit = self.snr
+        if self.snrThresh is None:
+            self.snrThresh = self.snr
+        if self.snr2Thresh is None:
+            self.snr2Thresh = self.snr
+
         if self.gaussPyDecomposition and (self.alpha1 is None or
                                           self.snrThresh is None or
                                           self.snr2Thresh is None):
@@ -210,12 +249,6 @@ class GaussPyDecompose(object):
                     errorMessage = \
                         """twoPhaseDecomposition needs alpha2 value"""
                     raise Exception(errorMessage)
-
-        if self.fitting['snr_negative'] is None:
-            self.fitting['snr_negative'] = self.fitting['snr']
-
-        if self.fitting['snr_fit'] is None:
-            self.fitting['snr_fit'] = self.fitting['snr'] / 2.
 
         if self.main_beam_efficiency is None:
             warnings.warn('assuming intensities are already corrected for  main beam efficiency')
@@ -262,7 +295,7 @@ class GaussPyDecompose(object):
 
         from .gausspy_py3 import gp as gp
         g = gp.GaussianDecomposer()  # Load GaussPy
-        g.set('useCpus', self.useCpus)
+        g.set('use_nCpus', self.use_nCpus)
         g.set('SNR_thresh', self.snrThresh)
         g.set('SNR2_thresh', self.snr2Thresh)
         g.set('improve_fitting_dict', self.fitting)

@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: parallel_processing.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:45:08+01:00
+# @Last modified time: 2019-03-04T10:21:25+01:00
 
 """Parallelization routine.
 
@@ -101,22 +101,22 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3):
     return front + out
 
 
-def func(usecpus=None, function='noise'):
+def func(use_nCpus=None, function='noise'):
     # Multiprocessing code
     ncpus = multiprocessing.cpu_count()
     # p = multiprocessing.Pool(ncpus, init_worker)
-    if usecpus is None:
-        usecpus = int(ncpus*0.75)
-    print('Using {} of {} cpus'.format(usecpus, ncpus))
+    if use_nCpus is None:
+        use_nCpus = int(ncpus*0.75)
+    print('Using {} of {} cpus'.format(use_nCpus, ncpus))
     try:
         if function == 'noise':
-            results_list = parallel_process(mp_ilist, calculate_noise, n_jobs=usecpus)
+            results_list = parallel_process(mp_ilist, calculate_noise, n_jobs=use_nCpus)
         elif function == 'gpy_noise':
-            results_list = parallel_process(mp_ilist, calculate_noise_gpy, n_jobs=usecpus)
+            results_list = parallel_process(mp_ilist, calculate_noise_gpy, n_jobs=use_nCpus)
         elif function == 'refit_phase_1':
-            results_list = parallel_process(mp_ilist, refit_spectrum_1, n_jobs=usecpus)
+            results_list = parallel_process(mp_ilist, refit_spectrum_1, n_jobs=use_nCpus)
         elif function == 'refit_phase_2':
-            results_list = parallel_process(mp_ilist, refit_spectrum_2, n_jobs=usecpus)
+            results_list = parallel_process(mp_ilist, refit_spectrum_2, n_jobs=use_nCpus)
         # results_list = p.map(determine_distance, tqdm(ilist))
     except KeyboardInterrupt:
         print("KeyboardInterrupt... quitting.")

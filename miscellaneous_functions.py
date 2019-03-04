@@ -2,12 +2,13 @@
 # @Date:   2019-01-09T12:27:55+01:00
 # @Filename: miscellaneous_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:44:14+01:00
+# @Last modified time: 2019-03-04T10:15:50+01:00
 
-import itertools
+import logging
+import os
 import numpy as np
-from lmfit import Parameters
 import networkx
+from datetime import datetime
 
 from gausspyplus.shared_functions import determine_peaks
 
@@ -127,3 +128,30 @@ def remove_components(lst, remove_indices):
         lst[idx] = [val for i, val in enumerate(sublst)
                     if i not in remove_indices]
     return lst
+
+
+def set_up_logger(parentDirname, filename, method='g+_decomposition'):
+    #  setting up logger
+    now = datetime.now()
+    date_string = "{}{}{}-{}{}{}".format(
+        now.year,
+        str(now.month).zfill(2),
+        str(now.day).zfill(2),
+        str(now.hour).zfill(2),
+        str(now.minute).zfill(2),
+        str(now.second).zfill(2))
+
+    dirname = os.path.join(parentDirname, 'gpy_log')
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+    filename = os.path.splitext(os.path.basename(filename))[0]
+
+    logname = os.path.join(dirname, '{}_{}_{}.log'.format(
+        date_string, method, filename))
+    logging.basicConfig(filename=logname,
+                        filemode='a',
+                        format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                        datefmt='%H:%M:%S',
+                        level=logging.DEBUG)
+
+    return logging.getLogger(__name__)

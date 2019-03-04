@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:48:23+01:00
+# @Last modified time: 2019-03-04T11:15:36+01:00
 
 import getpass
 import itertools
@@ -373,7 +373,8 @@ def spectral_smoothing(data, header, save=False, pathOutputFile=None,
 
 
 def determine_noise(spectrum, maxConsecutiveChannels=14, padChannels=5,
-                    idx=None, averageRms=None):
+                    idx=None, averageRms=None, random_seed=111):
+    np.random.seed(random_seed)
     if not np.isnan(spectrum).all():
         if np.isnan(spectrum).any():
             # TODO: Case where spectrum contains nans and only positive values
@@ -391,10 +392,11 @@ def determine_noise(spectrum, maxConsecutiveChannels=14, padChannels=5,
     return error
 
 
-def calculate_average_rms_noise(data, numberRmsSpectra,
+def calculate_average_rms_noise(data, numberRmsSpectra, random_seed=111,
                                 maxConsecutiveChannels=14, padChannels=5):
     import random
 
+    random.seed(random_seed)
     yValues = np.arange(data.shape[1])
     xValues = np.arange(data.shape[2])
     locations = list(itertools.product(yValues, xValues))
@@ -436,10 +438,12 @@ def get_path_to_output_file(pathToInputFile, suffix='_',
 
 def add_noise(average_rms, pathToInputFile=None, hdu=None, save=False,
               overwrite=True, pathToOutputFile=None, get_hdu=False,
-              get_data=True, get_header=True):
+              get_data=True, get_header=True, random_seed=111):
     print('\nadding noise (rms = {}) to data...'.format(average_rms))
 
     check_if_all_values_are_none(hdu, pathToInputFile)
+
+    np.random.seed(random_seed)
 
     if pathToInputFile is not None:
         hdu = fits.open(pathToInputFile)[0]
@@ -555,7 +559,7 @@ def make_subcube(sliceParams, pathToInputFile=None, hdu=None, dtype='float32',
 
 def apply_noise_threshold(data, snr=3, pathToNoiseMap=None,
                           sliceParams=(slice(None), slice(None)),
-                          pLimit=0.025, padChannels=5, useCpus=None):
+                          pLimit=0.025, padChannels=5, use_nCpus=None):
     """"""
     yMax = data.shape[1]
     xMax = data.shape[2]
@@ -577,7 +581,7 @@ def apply_noise_threshold(data, snr=3, pathToNoiseMap=None,
         import gausspyplus.parallel_processing
         gausspyplus.parallel_processing.init([locations, determine_noise, [data, maxConsecutiveChannels, padChannels]])
 
-        results_list = gausspyplus.parallel_processing.func(usecpus=useCpus, function='noise')
+        results_list = gausspyplus.parallel_processing.func(use_nCpus=use_nCpus, function='noise')
 
         for i, rms in tqdm(enumerate(results_list)):
             if not isinstance(rms, np.float):
@@ -641,7 +645,7 @@ def moment_map(hdu=None, pathToInputFile=None, sliceParams=None,
                applyNoiseThreshold=False, snr=3, order=0, linewidth='sigma',
                pLimit=0.025, padChannels=5,
                vel_unit=u.km/u.s, pathToNoiseMap=None,
-               save=False, get_hdu=True, useCpus=None,
+               save=False, get_hdu=True, use_nCpus=None,
                restoreNans=False, nanMask=None):
     """
     Previously called 'make_moment_fits'
@@ -670,7 +674,7 @@ def moment_map(hdu=None, pathToInputFile=None, sliceParams=None,
         data = apply_noise_threshold(data, snr=snr, sliceParams=sliceParams,
                                      pathToNoiseMap=pathToNoiseMap,
                                      pLimit=pLimit, padChannels=padChannels,
-                                     useCpus=useCpus)
+                                     use_nCpus=use_nCpus)
 
     hdu = get_moment_map(data, wcs, order=order, linewidth=linewidth,
                          vel_unit=vel_unit)
@@ -771,7 +775,7 @@ def pv_map(pathToInputFile=None, hdu=None, sliceParams=None,
            pathToOutputFile=None, pathToNoiseMap=None,
            applyNoiseThreshold=False, snr=3, pLimit=0.025, padChannels=5,
            sumOverLatitude=True, vel_unit=u.km/u.s,
-           save=False, get_hdu=True, useCpus=None):
+           save=False, get_hdu=True, use_nCpus=None):
     """
     Previously called 'make_pv_fits'
     """
@@ -795,7 +799,7 @@ def pv_map(pathToInputFile=None, hdu=None, sliceParams=None,
         data = apply_noise_threshold(data, snr=snr, sliceParams=sliceParams,
                                      pathToNoiseMap=pathToNoiseMap,
                                      pLimit=pLimit, padChannels=padChannels,
-                                     useCpus=useCpus)
+                                     use_nCpus=use_nCpus)
 
     wcs = WCS(header)
     #  have to reverse the axis since we change between FITS and np standards

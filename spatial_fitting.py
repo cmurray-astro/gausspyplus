@@ -2,33 +2,88 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T17:14:16+01:00
+# @Last modified time: 2019-03-04T11:34:46+01:00
 
+import ast
 import collections
-import datetime
-import logging
+import configparser
+# import datetime
+# import logging
 import os
 import pickle
+
+from astropy import units as u
 from tqdm import tqdm
 
 from networkx.algorithms.components.connected import connected_components
 import numpy as np
 
-from gausspyplus.shared_functions import goodness_of_fit,\
-    mask_channels, mask_covering_gaussians
-from gausspyplus.miscellaneous_functions import to_graph, get_neighbors
-from gausspyplus.gausspy_py3.gp_plus import split_params, get_fully_blended_gaussians,\
-    check_for_peaks_in_residual, get_best_fit, check_for_negative_residual,\
-    remove_components_from_list, combined_gaussian
+from gausspyplus.shared_functions import goodness_of_fit, mask_channels, mask_covering_gaussians
+from gausspyplus.miscellaneous_functions import to_graph, get_neighbors, set_up_logger
+from gausspyplus.gausspy_py3.gp_plus import split_params, get_fully_blended_gaussians, check_for_peaks_in_residual, get_best_fit, check_for_negative_residual, remove_components_from_list, combined_gaussian
 
 
 class SpatialFitting(object):
-    def __init__(self, pathToPickleFile, pathToDecompFile, finFilename):
-        self.dirname = os.path.dirname(pathToDecompFile)
-        self.parentDirname = os.path.dirname(self.dirname)
+    def __init__(self, pathToPickleFile, pathToDecompFile, finFilename,
+                 configFile=''):
+        self.pathToPickleFile = pathToPickleFile
+        self.pathToDecompFile = pathToDecompFile
         self.finFilename = finFilename
 
-        with open(pathToPickleFile, "rb") as pickle_file:
+        self.exclude_flagged = False
+        self.max_fwhm = None
+        self.rchi2_limit = 1.5
+        self.rchi2_limit_refit = None
+        self.maxDiffComps = 2
+        self.maxJumpComps = 2
+        self.nMaxJumpComps = 2
+        self.max_refitting_iteration = 30
+
+        self.flag_blended = False
+        self.flag_residual = False
+        self.flag_rchi2 = False
+        self.flag_broad = False
+        self.flag_ncomps = False
+        self.refit_blended = False
+        self.refit_residual = False
+        self.refit_rchi2 = False
+        self.refit_broad = False
+        self.refit_ncomps = False
+
+        self.mean_separation = 2.  # minimum distance between peaks in channels
+        self.fwhm_separation = 4.
+        self.snr = 3.
+        self.fwhm_factor = 1.5
+        self.fwhm_factor_refit = None
+        self.broad_neighbor_fraction = 0.5
+        self.min_weight = 0.5
+        self.use_nCpus = None
+        self.verbose = True
+        self.log_output = True
+        self.only_print_flags = False
+
+        if configFile:
+            self.get_values_from_config_file(configFile)
+
+    def get_values_from_config_file(self, configFile):
+        config = configparser.ConfigParser()
+        config.read(configFile)
+
+        for key, value in config['spatial fitting'].items():
+            try:
+                setattr(self, key, ast.literal_eval(value))
+            except ValueError:
+                if key == 'vel_unit':
+                    value = u.Unit(value)
+                    setattr(self, key, value)
+                else:
+                    raise Exception('Could not parse parameter {} from config file'.format(key))
+
+    def initialize(self):
+        self.dirname = os.path.dirname(self.pathToDecompFile)
+        self.parentDirname = os.path.dirname(self.dirname)
+
+        with open(self.pathToPickleFile, "rb") as pickle_file:
             pickledData = pickle.load(pickle_file, encoding='latin1')
 
         self.indexList = pickledData['index']
@@ -48,7 +103,7 @@ class SpatialFitting(object):
         self.signalRanges = pickledData['signal_ranges']
         self.noiseSpikeRanges = pickledData['noise_spike_ranges']
 
-        with open(pathToDecompFile, "rb") as pickle_file:
+        with open(self.pathToDecompFile, "rb") as pickle_file:
             self.decomposition = pickle.load(pickle_file, encoding='latin1')
 
         self.nIndices = len(self.decomposition['index_fit'])
@@ -76,63 +131,48 @@ class SpatialFitting(object):
         #  starting condition so that refitting iteration can start
         # self.mask_refitted = np.ones(1)
         self.mask_refitted = np.array([1]*self.nIndices)
-        self.exclude_flagged = False
-        self.max_fwhm = 50.
-        self.max_rchi2_flag = 1.5
-        self.max_rchi2_refit = 2.
-        self.maxDiffComps = 2
-        self.maxJumpComps = 2
-        self.nMaxJumpComps = 2
-        self.refitting_iteration = 0
-        self.max_refitting_iteration = 20
         self.list_n_refit = []
-        self.flag_blended, self.flag_residual, self.flag_rchi2,\
-            self.flag_broad, self.flag_ncomps = (False for _ in range(5))
-        self.refit_blended, self.refit_residual, self.refit_rchi2,\
-            self.refit_broad, self.refit_ncomps = (False for _ in range(5))
-
-        self.mean_separation = 2.  # minimum distance between peaks in channels
-        self.fwhm_separation = 4.
-        self.min_snr_data = 3.
-        self.min_fwhm = 0.5
-        self.max_fwhm_factor_flag = 1.5
-        self.max_fwhm_factor_refit = 1.5
-        self.broadNeighborFraction = 0.625
+        self.refitting_iteration = 0
         self.min_p = 5/6
-        self.useCpus = None
-        self.verbose = True
-        self.log_output = True
-        self.only_print_flags = False
 
-    def set_up_logger(self):
-        #  setting up logger
-        now = datetime.datetime.now()
-        date_string = "{}{}{}-{}{}{}".format(
-            now.year,
-            str(now.month).zfill(2),
-            str(now.day).zfill(2),
-            str(now.hour).zfill(2),
-            str(now.minute).zfill(2),
-            str(now.second).zfill(2))
+        if self.rchi2_limit_refit is None:
+            self.rchi2_limit_refit = self.rchi2_limit
+        if self.fwhm_factor_refit is None:
+            self.fwhm_factor_refit = self.fwhm_factor
+        if self.max_fwhm is None:
+            self.max_fwhm = int(self.nChannels / 2)
 
-        dirname = os.path.join(self.parentDirname, 'gpy_log')
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-        filename = os.path.splitext(os.path.basename(self.finFilename))[0]
-
-        logname = os.path.join(dirname, '{}_{}.log'.format(
-            date_string, filename))
-        logging.basicConfig(filename=logname,
-                            filemode='a',
-                            format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                            datefmt='%H:%M:%S',
-                            level=logging.DEBUG)
-
-        self.logger = logging.getLogger(__name__)
+    # def set_up_logger(self):
+    #     #  setting up logger
+    #     now = datetime.datetime.now()
+    #     date_string = "{}{}{}-{}{}{}".format(
+    #         now.year,
+    #         str(now.month).zfill(2),
+    #         str(now.day).zfill(2),
+    #         str(now.hour).zfill(2),
+    #         str(now.minute).zfill(2),
+    #         str(now.second).zfill(2))
+    #
+    #     dirname = os.path.join(self.parentDirname, 'gpy_log')
+    #     if not os.path.exists(dirname):
+    #         os.makedirs(dirname)
+    #     filename = os.path.splitext(os.path.basename(self.finFilename))[0]
+    #
+    #     logname = os.path.join(dirname, '{}_{}.log'.format(
+    #         date_string, filename))
+    #     logging.basicConfig(filename=logname,
+    #                         filemode='a',
+    #                         format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+    #                         datefmt='%H:%M:%S',
+    #                         level=logging.DEBUG)
+    #
+    #     self.logger = logging.getLogger(__name__)
 
     def getting_ready(self):
         if self.log_output:
-            self.set_up_logger()
+            self.logger = set_up_logger(
+                self.parentDirname, self.filename, method='g+_spatial_refitting')
+            # self.set_up_logger()
 
         phase = 1
         if self.phase_two:
@@ -157,9 +197,9 @@ class SpatialFitting(object):
                 a=self.flag_blended,
                 b=self.flag_residual,
                 c=self.flag_broad,
-                d=self.max_fwhm_factor_flag,
-                e=self.broadNeighborFraction,
-                f=self.max_rchi2_flag,
+                d=self.fwhm_factor,
+                e=self.broad_neighbor_fraction,
+                f=self.rchi2_limit,
                 g=self.flag_rchi2,
                 h=self.flag_ncomps)
         self.say(string)
@@ -184,9 +224,9 @@ class SpatialFitting(object):
                 a=self.refit_blended,
                 b=self.refit_residual,
                 c=self.refit_broad,
-                d=self.max_fwhm_factor_refit,
-                e=self.broadNeighborFraction,
-                f=self.max_rchi2_refit,
+                d=self.fwhm_factor_refit,
+                e=self.broad_neighbor_fraction,
+                f=self.rchi2_limit_refit,
                 g=self.refit_rchi2,
                 h=self.refit_ncomps)
         if not self.phase_two:
@@ -194,6 +234,7 @@ class SpatialFitting(object):
 
     def spatial_fitting(self, continuity=False):
         self.phase_two = continuity
+        self.initialize()
         self.getting_ready()
         if self.phase_two:
             self.list_n_refit.append([self.length])
@@ -241,7 +282,7 @@ class SpatialFitting(object):
                 if central_value > value * max_fwhm_factor and\
                         (central_value - value) > self.fwhm_separation:
                     counter += 1
-            if counter >= values.size * self.broadNeighborFraction:
+            if counter > values.size * self.broad_neighbor_fraction:
                 return central_value
             return 0
 
@@ -337,9 +378,9 @@ class SpatialFitting(object):
         self.mask_residual = self.define_mask(
             'N_negative_residuals', 0, self.flag_residual)
         self.mask_rchi2_flagged = self.define_mask(
-            'best_fit_rchi2', self.max_rchi2_flag, self.flag_rchi2)
+            'best_fit_rchi2', self.rchi2_limit, self.flag_rchi2)
         self.mask_broad_flagged = self.define_mask_broad(
-            self.max_fwhm_factor_flag, self.flag_broad)
+            self.fwhm_factor, self.flag_broad)
         self.mask_broad_limit, self.n_broad = self.define_mask_broad_limit(
             self.flag_broad)
 
@@ -405,10 +446,10 @@ class SpatialFitting(object):
         self.determine_spectra_for_flagging()
 
         self.mask_broad_refit = self.define_mask_broad(
-            self.max_fwhm_factor_refit, self.refit_broad)
+            self.fwhm_factor_refit, self.refit_broad)
 
         self.mask_rchi2_refit = self.define_mask(
-            'best_fit_rchi2', self.max_rchi2_refit, self.refit_rchi2)
+            'best_fit_rchi2', self.rchi2_limit_refit, self.refit_rchi2)
 
         self.define_mask_refit()
 
@@ -494,9 +535,9 @@ class SpatialFitting(object):
         gausspyplus.parallel_processing.init([self.indices_refit, [self]])
 
         if self.phase_two:
-            results_list = gausspyplus.parallel_processing.func(usecpus=self.useCpus, function='refit_phase_2')
+            results_list = gausspyplus.parallel_processing.func(use_nCpus=self.use_nCpus, function='refit_phase_2')
         else:
-            results_list = gausspyplus.parallel_processing.func(usecpus=self.useCpus, function='refit_phase_1')
+            results_list = gausspyplus.parallel_processing.func(use_nCpus=self.use_nCpus, function='refit_phase_1')
 
         print('SUCCESS')
 
@@ -548,8 +589,8 @@ class SpatialFitting(object):
         # if self.iterative_rchi2 > self.max_rchi2:
         #     self.iterative_rchi2 -= 0.1
 
-        # if self.broadNeighborFraction > 0.625:
-        #     self.broadNeighborFraction -= 0.125
+        # if self.broad_neighbor_fraction > 0.625:
+        #     self.broad_neighbor_fraction -= 0.125
 
         if self.phase_two:
             if self.stopping_criterion([count_refitted]):
@@ -559,7 +600,7 @@ class SpatialFitting(object):
             else:
                 self.list_n_refit.append([count_refitted])
 
-            if self.min_p < 3/6:
+            if self.min_p < self.min_weight:
                 self.save_final_results()
             else:
                 self.check_continuity()
@@ -970,7 +1011,7 @@ class SpatialFitting(object):
         #         if len(fwhms) > 1:
         #             #  punish fit if broad component was introduced
         #             fwhms = sorted(dictResults['fwhms_fit'])
-        #             if (fwhms[-1] > self.max_fwhm_factor_flag * fwhms[-2]) and\
+        #             if (fwhms[-1] > self.fwhm_factor * fwhms[-2]) and\
         #                     (fwhms[-1] - fwhms[-2]) > self.fwhm_separation:
         #                 flag_new = 1
         # elif key == 'N_components':
@@ -994,10 +1035,10 @@ class SpatialFitting(object):
 
     def get_flags_rchi2(self, dictResults, index, dct_new_fit=None):
         def rchi2_flag_value(rchi2):
-            if rchi2 <= self.max_rchi2_flag:
+            if rchi2 <= self.rchi2_limit:
                 return 0
-            numerator = rchi2 - self.max_rchi2_flag
-            denominator = self.max_rchi2_flag / 4
+            numerator = rchi2 - self.rchi2_limit
+            denominator = self.rchi2_limit / 4
             return int(numerator / denominator) + 1
 
         flag_old, flag_new = (0 for _ in range(2))
@@ -1010,7 +1051,7 @@ class SpatialFitting(object):
         rchi2_new = dictResults['best_fit_rchi2']
 
         #  do not punish fit if it is closer to rchi2 = 1 and thus likely less "overfit"
-        if max(rchi2_old, rchi2_new) < self.max_rchi2_flag:
+        if max(rchi2_old, rchi2_new) < self.rchi2_limit:
             if abs(rchi2_new - 1) < abs(rchi2_old - 1):
                 flag_old = 1
         else:
@@ -1047,7 +1088,7 @@ class SpatialFitting(object):
             if len(fwhms) > 1:
                 #  punish fit if broad component was introduced
                 fwhms = sorted(dictResults['fwhms_fit'])
-                if (fwhms[-1] > self.max_fwhm_factor_flag * fwhms[-2]) and\
+                if (fwhms[-1] > self.fwhm_factor * fwhms[-2]) and\
                         (fwhms[-1] - fwhms[-2]) > self.fwhm_separation:
                     flag_new = 1
 
@@ -1298,7 +1339,7 @@ class SpatialFitting(object):
             idx_upp = int(mean_ini + stddev_ini) + 2
 
             amp_max = np.max(spectrum[idx_low:idx_upp])
-            if amp_max < self.min_snr_data*rms:
+            if amp_max < self.snr*rms:
                 dictComps.pop(key)
                 continue
 

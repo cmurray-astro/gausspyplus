@@ -2,39 +2,32 @@
 # @Date:   2019-02-26T16:38:04+01:00
 # @Filename: prepare.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:45:48+01:00
+# @Last modified time: 2019-03-04T11:31:26+01:00
 
+import ast
+import configparser
 import logging
 import os
 import pickle
 import itertools
-import sys
 
 import numpy as np
 
-from datetime import datetime
+from astropy import units as u
 from astropy.io import fits
 from tqdm import tqdm
 
-from gausspyplus.shared_functions import max_consecutive_channels, mask_channels,\
-    get_signal_ranges, get_noise_spike_ranges, add_subtracted_nan_ranges
+from gausspyplus.shared_functions import max_consecutive_channels, mask_channels, get_signal_ranges, get_noise_spike_ranges
 
-from gausspyplus.spectral_cube_functions import determine_noise, remove_additional_axes,\
-    calculate_average_rms_noise, add_noise, change_header, save_fits
+from gausspyplus.spectral_cube_functions import determine_noise, remove_additional_axes, calculate_average_rms_noise, add_noise, change_header, save_fits
 
-if (sys.version_info < (3, 0)):
-    raise Exception('Script has to be run in Python 3 environment.')
+from gausspyplus.miscellaneous_functions import set_up_logger
 
 
 class GaussPyPrepare(object):
-    def __init__(self, pathToFile, gpyDirname=None):
+    def __init__(self, pathToFile, gpyDirname=None, configFile=''):
         self.pathToFile = pathToFile
-        self.parentDirname = os.path.dirname(pathToFile)
-        self.file = os.path.basename(pathToFile)
-        self.filename, self.fileExtension = os.path.splitext(self.file)
-        if gpyDirname is not None:
-            self.parentDirname = gpyDirname
-        self.pickleDirname = os.path.join(self.parentDirname, 'gpy_prepared')
+        self.gpyDirname = gpyDirname
 
         self.gausspyPickle = True
         self.testing = False
@@ -54,43 +47,80 @@ class GaussPyPrepare(object):
 
         self.snr = 3.
         self.significance = 5.
-        self.noiseSpikeSnr = 4.
+        self.snr_noise_spike = 4.
 
         self.suffix = ''
-        self.useCpus = None
+        self.use_nCpus = None
         self.log_output = True
         self.verbose = True
         self.overwrite = True
+        self.random_seed = 111
 
-    def set_up_logger(self):
-        #  setting up logger
-        now = datetime.now()
-        date_string = "{}{}{}-{}{}{}".format(
-            now.year,
-            str(now.month).zfill(2),
-            str(now.day).zfill(2),
-            str(now.hour).zfill(2),
-            str(now.minute).zfill(2),
-            str(now.second).zfill(2))
+        if configFile:
+            self.get_values_from_config_file(configFile)
 
-        dirname = os.path.join(self.parentDirname, 'gpy_log')
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-        filename = os.path.splitext(os.path.basename(self.filename))[0]
+    def get_values_from_config_file(self, configFile):
+        config = configparser.ConfigParser()
+        config.read(configFile)
 
-        logname = os.path.join(dirname, '{}_prepare_{}.log'.format(
-            date_string, filename))
-        logging.basicConfig(filename=logname,
-                            filemode='a',
-                            format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                            datefmt='%H:%M:%S',
-                            level=logging.DEBUG)
+        for key, value in config['preparation'].items():
+            try:
+                setattr(self, key, ast.literal_eval(value))
+            except ValueError:
+                if key == 'vel_unit':
+                    value = u.Unit(value)
+                    setattr(self, key, value)
+                else:
+                    raise Exception('Could not parse parameter {} from config file'.format(key))
 
-        self.logger = logging.getLogger(__name__)
+    # def set_up_logger(self):
+    #     #  setting up logger
+    #     now = datetime.now()
+    #     date_string = "{}{}{}-{}{}{}".format(
+    #         now.year,
+    #         str(now.month).zfill(2),
+    #         str(now.day).zfill(2),
+    #         str(now.hour).zfill(2),
+    #         str(now.minute).zfill(2),
+    #         str(now.second).zfill(2))
+    #
+    #     dirname = os.path.join(self.parentDirname, 'gpy_log')
+    #     if not os.path.exists(dirname):
+    #         os.makedirs(dirname)
+    #     filename = os.path.splitext(os.path.basename(self.filename))[0]
+    #
+    #     logname = os.path.join(dirname, '{}_prepare_{}.log'.format(
+    #         date_string, filename))
+    #     logging.basicConfig(filename=logname,
+    #                         filemode='a',
+    #                         format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+    #                         datefmt='%H:%M:%S',
+    #                         level=logging.DEBUG)
+    #
+    #     self.logger = logging.getLogger(__name__)
+
+    def check_settings(self):
+        if self.testing and (self.dataLocation is None):
+            errorMessage = \
+                """specify 'dataLocation' as (y, x) for 'testing'"""
+            raise Exception(errorMessage)
+
+        if self.simulation and (self.average_rms is None):
+            errorMessage = \
+                """specify 'average_rms' for 'simulation'"""
+            raise Exception(errorMessage)
+
+        if self.pickleDirname is None:
+            errorMessage = """pickleDirname is not defined"""
+            raise Exception(errorMessage)
+        if not os.path.exists(self.pickleDirname):
+            os.makedirs(self.pickleDirname)
 
     def getting_ready(self):
         if self.log_output:
-            self.set_up_logger()
+            self.logger = set_up_logger(
+                self.parentDirname, self.filename, method='g+_preparation')
+            # self.set_up_logger()
 
         string = 'GaussPy preparation'
         banner = len(string) * '='
@@ -104,14 +134,20 @@ class GaussPyPrepare(object):
         if self.verbose:
             print(message)
 
-    def prepare_cube(self):
-        self.check_settings()
+    def initialize(self):
+        self.parentDirname = os.path.dirname(self.pathToFile)
+        self.file = os.path.basename(self.pathToFile)
+        self.filename, self.fileExtension = os.path.splitext(self.file)
+        if self.gpyDirname is not None:
+            self.parentDirname = self.gpyDirname
+        self.pickleDirname = os.path.join(self.parentDirname, 'gpy_prepared')
 
         hdu = fits.open(self.pathToFile)[0]
 
         if self.simulation:
             self.rmsFromData = False
-            hdu = add_noise(self.average_rms, hdu=hdu, get_hdu=True)
+            hdu = add_noise(self.average_rms, hdu=hdu, get_hdu=True,
+                            random_seed=self.random_seed)
 
         self.data = hdu.data
         self.header = hdu.header
@@ -120,6 +156,9 @@ class GaussPyPrepare(object):
             self.data, self.header, verbose=self.verbose)
 
         self.errors = np.empty((self.data.shape[1], self.data.shape[2]))
+
+        if self.average_rms is None:
+            self.rmsFromData = True
 
         if self.testing:
             ypos = self.dataLocation[0]
@@ -140,35 +179,20 @@ class GaussPyPrepare(object):
         if self.rmsFromData:
             self.calculate_average_rms_from_data()
 
+    def prepare_cube(self):
+        self.check_settings()
+        self.getting_ready()
+        self.initialize()
+
         if self.gausspyPickle:
             self.prepare_gausspy_pickle()
-
-    def check_settings(self):
-
-        if self.testing and (self.dataLocation is None):
-            errorMessage = \
-                """specify 'dataLocation' as (y, x) for 'testing'"""
-            raise Exception(errorMessage)
-
-        if self.simulation and (self.average_rms is None):
-            errorMessage = \
-                """specify 'average_rms' for 'simulation'"""
-            raise Exception(errorMessage)
-
-        if self.pickleDirname is None:
-            errorMessage = """pickleDirname is not defined"""
-            raise Exception(errorMessage)
-        if not os.path.exists(self.pickleDirname):
-            os.makedirs(self.pickleDirname)
-
-        self.getting_ready()
 
     def calculate_average_rms_from_data(self):
         self.say('\ncalculating average rms from data...')
 
         self.average_rms = calculate_average_rms_noise(
             self.data.copy(), self.numberRmsSpectra,
-            padChannels=self.padChannels,
+            padChannels=self.padChannels, random_seed=self.random_seed,
             maxConsecutiveChannels=self.maxConsecutiveChannels)
 
         self.say('>> calculated rms value of {:.3f} from data'.format(
@@ -199,7 +223,7 @@ class GaussPyPrepare(object):
         import gausspyplus.parallel_processing
         gausspyplus.parallel_processing.init([locations, [self]])
 
-        results_list = gausspyplus.parallel_processing.func(usecpus=self.useCpus, function='gpy_noise')
+        results_list = gausspyplus.parallel_processing.func(use_nCpus=self.use_nCpus, function='gpy_noise')
 
         print('SUCCESS\n')
 
@@ -264,7 +288,7 @@ class GaussPyPrepare(object):
 
         if self.signalMask and not np.isnan(rms):
             noise_spike_ranges = get_noise_spike_ranges(
-                spectrum, rms, noiseSpikeSnr=self.noiseSpikeSnr)
+                spectrum, rms, snr_noise_spike=self.snr_noise_spike)
             if self.mask_out_ranges:
                 noise_spike_ranges += self.mask_out_ranges
             signal_ranges = get_signal_ranges(

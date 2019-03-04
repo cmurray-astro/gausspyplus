@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: shared_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:46:03+01:00
+# @Last modified time: 2019-03-04T10:13:04+01:00
 
 import numpy as np
 import warnings
@@ -471,9 +471,9 @@ def get_signal_ranges(spectrum, rms, maxConsecutiveChannels=14,
     return ranges
 
 
-def get_noise_spike_ranges(spectrum, rms, noiseSpikeSnr=3.5):
+def get_noise_spike_ranges(spectrum, rms, snr_noise_spike=3.5):
     maxampvals, ranges = determine_peaks(
-        spectrum, peak='negative', amp_threshold=noiseSpikeSnr*rms)
+        spectrum, peak='negative', amp_threshold=snr_noise_spike*rms)
     # TODO: check what happens if ranges is an empty list
     return ranges.tolist()
 

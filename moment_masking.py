@@ -2,7 +2,7 @@
 # @Date:   2019-01-09T12:27:55+01:00
 # @Filename: moment_masking.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T14:44:37+01:00
+# @Last modified time: 2019-03-04T11:32:49+01:00
 
 """Moment masking procedure from Dame (2011)."""
 
@@ -45,7 +45,7 @@ class MomentMask(object):
         self.sliceParams = None
         self.pLimit = 0.025
         self.padChannels = 5
-        self.useCpus = None
+        self.use_nCpus = None
         self.pathToNoiseMap = None
         self.maskingCube = None
         self.targetResolutionSpatial = None
@@ -55,6 +55,7 @@ class MomentMask(object):
         self.numberRmsSpectra = 1000
         self.clippingLevel = 5
         self.verbose = True
+        self.random_seed = 111
 
     def prepare_cube(self):
         # self.check_settings()
@@ -191,7 +192,7 @@ class MomentMask(object):
         averageRms = calculate_average_rms_noise(
             self.dataSmoothedWithNans, self.numberRmsSpectra,
             maxConsecutiveChannels=self.maxConsecutiveChannels,
-            padChannels=self.padChannels)
+            padChannels=self.padChannels, random_seed=self.random_seed)
         say('Determined average rms value of {}'.format(averageRms), verbose=self.verbose)
 
         say('Determining noise of smoothed cube ...', verbose=self.verbose)
@@ -202,7 +203,7 @@ class MomentMask(object):
         import gausspyplus.parallel_processing
         gausspyplus.parallel_processing.init([self.locations, [self.dataSmoothedWithNans, self.maxConsecutiveChannels, self.padChannels, averageRms]])
 
-        results_list = gausspyplus.parallel_processing.func(usecpus=self.useCpus, function='noise')
+        results_list = gausspyplus.parallel_processing.func(use_nCpus=self.use_nCpus, function='noise')
 
         for i, rms in tqdm(enumerate(results_list)):
             if not isinstance(rms, np.float):
