@@ -2,7 +2,7 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:43:14+01:00
+# @Last modified time: 2019-03-04T17:11:40+01:00
 
 from __future__ import print_function
 
@@ -230,7 +230,7 @@ class GaussPyDecompose(object):
         if self.snr_negative is None:
             self.snr_negative = self.snr
         if self.snr_fit is None:
-            self.snr_fit = self.snr
+            self.snr_fit = self.snr / 2.
         if self.snr_thresh is None:
             self.snr_thresh = self.snr
         if self.snr2_thresh is None:

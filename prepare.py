@@ -2,7 +2,7 @@
 # @Date:   2019-02-26T16:38:04+01:00
 # @Filename: prepare.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:41:35+01:00
+# @Last modified time: 2019-03-04T13:39:50+01:00
 
 import ast
 import configparser
@@ -117,11 +117,6 @@ class GaussPyPrepare(object):
             os.makedirs(self.pickleDirname)
 
     def getting_ready(self):
-        if self.log_output:
-            self.logger = set_up_logger(
-                self.parentDirname, self.filename, method='g+_preparation')
-            # self.set_up_logger()
-
         string = 'GaussPy preparation'
         banner = len(string) * '='
         heading = '\n' + banner + '\n' + string + '\n' + banner
@@ -141,6 +136,10 @@ class GaussPyPrepare(object):
         if self.gpy_dirname is not None:
             self.parentDirname = self.gpy_dirname
         self.pickleDirname = os.path.join(self.parentDirname, 'gpy_prepared')
+
+        if self.log_output:
+            self.logger = set_up_logger(
+                self.parentDirname, self.filename, method='g+_preparation')
 
         hdu = fits.open(self.pathToFile)[0]
 
@@ -180,9 +179,9 @@ class GaussPyPrepare(object):
             self.calculate_average_rms_from_data()
 
     def prepare_cube(self):
+        self.initialize()
         self.check_settings()
         self.getting_ready()
-        self.initialize()
 
         if self.gausspy_pickle:
             self.prepare_gausspy_pickle()

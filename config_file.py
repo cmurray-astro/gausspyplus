@@ -1,8 +1,8 @@
-n_max_jump_comps# @Author: riener
+# @Author: riener
 # @Date:   2019-03-03T20:27:37+01:00
 # @Filename: config_file.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:48:24+01:00
+# @Last modified time: 2019-03-04T13:53:34+01:00
 
 import configparser
 import textwrap
@@ -24,18 +24,18 @@ def make(mode='simple', outputDir=''):
         snr = 3.
         significance = 5.
         snr_noise_spike = 5.
-        min_fwhm: 1.
-        max_fwhm: None
-        fwhm_factor: 2.
+        min_fwhm = 1.
+        max_fwhm = None
+        fwhm_factor = 2.
         rchi2_limit = 1.5
 
         two_phase_decomposition = True
 
-        refit_blended: True
-        refit_broad: True
-        refit_residual: True
-        refit_rchi2 = False
-        refit_ncomps = False
+        refit_blended = True
+        refit_broad = True
+        refit_residual = True
+        refit_rchi2 = True
+        refit_ncomps = True
 
         p_limit = 0.025
         signal_mask = True
@@ -52,15 +52,14 @@ def make(mode='simple', outputDir=''):
 
         [training]
 
-        path_to_training_set = ''
         training_set = True
         n_spectra = 5
         order = 6
         use_all = False
 
         params_from_data = True
-        alpha1_guess = None
-        alpha2_guess = None
+        alpha1_initial = None
+        alpha2_initial = None
         snr_thresh = None
         snr2_thresh = None
 
@@ -77,7 +76,6 @@ def make(mode='simple', outputDir=''):
 
         [preparation]
 
-        gpy_dirname = ''
         n_spectra_rms = 1000
 
         gausspy_pickle = True
@@ -97,13 +95,12 @@ def make(mode='simple', outputDir=''):
         alpha2 = None
         snr_thresh = None
         snr2_thresh = None
-        decomp_dirname = ''
 
-        improve_fitting: True
-        min_offset: 2.
-        snr_fit: None
-        snr_negative: None
-        max_amp_factor: 1.1
+        improve_fitting = True
+        min_offset = 2.
+        snr_fit = None
+        snr_negative = None
+        max_amp_factor = 1.1
 
 
         [spatial fitting]
@@ -113,12 +110,12 @@ def make(mode='simple', outputDir=''):
         max_diff_comps = 2
         max_jump_comps = 2
         n_max_jump_comps = 2
-        max_refitting_iteration = 20
-        flag_blended = False
-        flag_residual = False
-        flag_rchi2 = False
-        flag_broad = False
-        flag_ncomps = False
+        max_refitting_iteration = 30
+        flag_blended = True
+        flag_residual = True
+        flag_rchi2 = True
+        flag_broad = True
+        flag_ncomps = True
 
         mean_separation = 2.
         fwhm_separation = 4.

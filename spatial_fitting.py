@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:44:52+01:00
+# @Last modified time: 2019-03-04T14:05:06+01:00
 
 import ast
 import collections
@@ -81,6 +81,8 @@ class SpatialFitting(object):
 
     def initialize(self):
         self.dirname = os.path.dirname(self.pathToDecompFile)
+        self.file = os.path.basename(self.pathToDecompFile)
+        self.filename, self.fileExtension = os.path.splitext(self.file)
         self.parentDirname = os.path.dirname(self.dirname)
 
         with open(self.pathToPickleFile, "rb") as pickle_file:

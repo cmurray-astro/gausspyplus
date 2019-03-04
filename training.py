@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: training.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:47:54+01:00
+# @Last modified time: 2019-03-04T13:18:58+01:00
 
 import ast
 import configparser
@@ -22,8 +22,8 @@ class GaussPyTraining(object):
 
         self.two_phase_decomposition = True
         self.snr = 3.
-        self.alpha1_guess = None
-        self.alpha2_guess = None
+        self.alpha1_initial = None
+        self.alpha2_initial = None
         self.snr_thresh = None
         self.snr2_thresh = None
 
@@ -59,7 +59,7 @@ class GaussPyTraining(object):
                 else:
                     raise Exception('Could not parse parameter {} from config file'.format(key))
 
-    def intitialize(self):
+    def initialize(self):
         self.dirname = os.path.dirname(self.path_to_training_set)
         self.file = os.path.basename(self.path_to_training_set)
         self.filename, self.fileExtension = os.path.splitext(self.file)
@@ -68,16 +68,16 @@ class GaussPyTraining(object):
             self.snr_thresh = self.snr
         if self.snr2_thresh is None:
             self.snr2_thresh = self.snr
-        if self.alpha1_guess is None:
-            self.alpha1_guess = 3.
+        if self.alpha1_initial is None:
+            self.alpha1_initial = 3.
             warnings.warn(
                 'No value for {a} supplied. Setting {a} to {b}.'.format(
-                    a='alpha1_guess', b=self.alpha1_guess))
-        if self.alpha2_guess is None:
-            self.alpha2_guess = 6.
+                    a='alpha1_initial', b=self.alpha1_initial))
+        if self.alpha2_initial is None:
+            self.alpha2_initial = 6.
             warnings.warn(
                 'No value for {a} supplied. Setting {a} to {b}.'.format(
-                    a='alpha2_guess', b=self.alpha2_guess))
+                    a='alpha2_initial', b=self.alpha2_initial))
 
     def training(self):
         self.initialize()
@@ -218,7 +218,7 @@ class GaussPyTraining(object):
         if self.two_phase_decomposition:
             g.set('phase', 'two')  # Set GaussPy parameters
             # Train AGD starting with initial guess for alpha
-            g.train(alpha1_initial=self.alpha1_guess, alpha2_initial=self.alpha2_guess)
+            g.train(alpha1_initial=self.alpha1_initial, alpha2_initial=self.alpha2_initial)
         else:
             g.set('phase', 'one')
-            g.train(alpha1_initial=self.alpha1_guess)
+            g.train(alpha1_initial=self.alpha1_initial)
