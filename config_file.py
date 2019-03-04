@@ -2,7 +2,7 @@
 # @Date:   2019-03-03T20:27:37+01:00
 # @Filename: config_file.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T11:47:14+01:00
+# @Last modified time: 2019-03-04T12:03:30+01:00
 
 import configparser
 import textwrap
@@ -64,7 +64,7 @@ def make(mode='simple', outputDir=''):
         snrThresh = None
         snr2Thresh = None
 
-        createTrainingSet = True
+        createTrainingSet = False
         nChannels = None
         nSpectra = None
         nCompsLims = None
@@ -110,7 +110,7 @@ def make(mode='simple', outputDir=''):
         [spatial fitting]
 
         exclude_flagged = False
-        rchi2_limit_refit = 2.
+        rchi2_limit_refit = None
         maxDiffComps = 2
         maxJumpComps = 2
         nMaxJumpComps = 2
@@ -123,7 +123,7 @@ def make(mode='simple', outputDir=''):
 
         mean_separation = 2.
         fwhm_separation = 4.
-        fwhm_factor_refit = 1.5
+        fwhm_factor_refit = None
         broad_neighbor_fraction = 0.5
         min_weight = 0.5
         only_print_flags = False
