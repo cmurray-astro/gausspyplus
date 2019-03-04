@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: training_set.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:15:40+01:00
+# @Last modified time: 2019-03-04T12:38:46+01:00
 
 import ast
 import configparser
@@ -47,13 +47,13 @@ def mp_decompose_one(i):
     return result
 
 
-def mp_func(total, use_nCpus=None):
+def mp_func(total, use_ncpus=None):
     # Multiprocessing code
     ncpus = multiprocessing.cpu_count()
-    if use_nCpus is None:
-        use_nCpus = int(0.75 * ncpus)
-    print('using {} out of {} cpus'.format(use_nCpus, ncpus))
-    p = multiprocessing.Pool(use_nCpus, mp_init_worker)
+    if use_ncpus is None:
+        use_ncpus = int(0.75 * ncpus)
+    print('using {} out of {} cpus'.format(use_ncpus, ncpus))
+    p = multiprocessing.Pool(use_ncpus, mp_init_worker)
 
     try:
         results_list = []
@@ -80,19 +80,19 @@ def mp_func(total, use_nCpus=None):
 class GaussPyTrainingSet(object):
     def __init__(self, pathToFile, configFile=''):
         self.pathToFile = pathToFile
-        self.pathToTrainingSet = None
+        self.path_to_training_set = None
 
-        self.trainingSet = True
-        self.numberSpectra = 5
+        self.training_set = True
+        self.n_spectra = 5
         self.order = 6
         self.snr = 3
         self.significance = 5
         self.min_fwhm = 1.
         self.max_fwhm = None
-        self.pLimit = 0.025
-        self.signalMask = True
-        self.padChannels = 5
-        self.minChannels = 100
+        self.p_limit = 0.025
+        self.signal_mask = True
+        self.pad_channels = 5
+        self.min_channels = 100
         self.snr_noise_spike = 4.
         # TODO: also define lower limit for rchi2 to prevent overfitting?
         self.rchi2_limit = 1.5
@@ -101,7 +101,7 @@ class GaussPyTrainingSet(object):
 
         self.verbose = True
         self.suffix = ''
-        self.use_nCpus = None
+        self.use_ncpus = None
         self.random_seed = 111
 
         if configFile:
@@ -144,29 +144,29 @@ class GaussPyTrainingSet(object):
 
             self.data, self.header = remove_additional_axes(
                 self.data, self.header)
-            self.nChannels = self.data.shape[0]
+            self.n_channels = self.data.shape[0]
         else:
             with open(os.path.join(self.pathToFile), "rb") as pickle_file:
                 dctData = pickle.load(pickle_file, encoding='latin1')
             self.data = dctData['data_list']
-            self.nChannels = len(self.data[0])
+            self.n_channels = len(self.data[0])
 
-        self.channels = np.arange(self.nChannels)
+        self.channels = np.arange(self.n_channels)
 
     def decompose_spectra(self):
         self.initialize()
         if self.verbose:
-            print("decompose {} spectra ...".format(self.numberSpectra))
+            print("decompose {} spectra ...".format(self.n_spectra))
 
         if self.random_seed is not None:
             random.seed(self.random_seed)
 
-        if self.trainingSet:
+        if self.training_set:
             data = {}
 
-        self.mask_omit = mask_channels(self.nChannels, self.mask_out_ranges)
+        self.mask_omit = mask_channels(self.n_channels, self.mask_out_ranges)
 
-        self.maxConsecutiveChannels = max_consecutive_channels(self.nChannels, self.pLimit)
+        self.maxConsecutiveChannels = max_consecutive_channels(self.n_channels, self.p_limit)
 
         if self.header:
             yValues = np.arange(self.data.shape[1])
@@ -180,11 +180,11 @@ class GaussPyTrainingSet(object):
             # indices = np.array([4506])  # for testing
 
         if self.use_all:
-            self.numberSpectra = nSpectra
+            self.n_spectra = nSpectra
 
         #  start multiprocessing
         mp_init([self, indices])
-        results_list = mp_func(self.numberSpectra)
+        results_list = mp_func(self.n_spectra)
         print('SUCCESS\n')
         for result in results_list:
             if result is not None:
@@ -217,11 +217,11 @@ class GaussPyTrainingSet(object):
         if self.header:
             data['header'] = self.header
 
-        if self.trainingSet:
-            if not os.path.exists(self.pathToTrainingSet):
-                os.makedirs(self.pathToTrainingSet)
+        if self.training_set:
+            if not os.path.exists(self.path_to_training_set):
+                os.makedirs(self.path_to_training_set)
             filename = '{}{}.pickle'.format(self.filename, self.suffix)
-            pathToFile = os.path.join(self.pathToTrainingSet, filename)
+            pathToFile = os.path.join(self.path_to_training_set, filename)
             pickle.dump(data, open(pathToFile, 'wb'), protocol=2)
 
     def decompose(self, index, i):
@@ -233,12 +233,12 @@ class GaussPyTrainingSet(object):
             spectrum = self.data[index].copy()
 
         if self.mask_out_ranges:
-            nan_mask = mask_channels(self.nChannels, self.mask_out_ranges)
+            nan_mask = mask_channels(self.n_channels, self.mask_out_ranges)
             spectrum[nan_mask] = np.nan
 
         rms = determine_noise(
             spectrum, maxConsecutiveChannels=self.maxConsecutiveChannels,
-            padChannels=self.padChannels, idx=index, averageRms=None)
+            pad_channels=self.pad_channels, idx=index, averageRms=None)
 
         if np.isnan(rms):
             return None
@@ -251,17 +251,17 @@ class GaussPyTrainingSet(object):
         signal_ranges = get_signal_ranges(
             spectrum, rms, snr=self.snr, significance=self.significance,
             maxConsecutiveChannels=self.maxConsecutiveChannels,
-            padChannels=self.padChannels, minChannels=self.minChannels,
+            pad_channels=self.pad_channels, min_channels=self.min_channels,
             remove_intervals=noise_spike_ranges)
 
         if signal_ranges:
-            signal_mask = mask_channels(self.nChannels, signal_ranges)
+            mask_signal = mask_channels(self.n_channels, signal_ranges)
         else:
-            signal_mask = None
+            mask_signal = None
 
         maxima = self.get_maxima(spectrum, rms)
         fit_values, rchi2 = self.gaussian_fitting(
-            spectrum, maxima, rms, signal_mask=signal_mask)
+            spectrum, maxima, rms, mask_signal=mask_signal)
         # TODO: change the rchi2_limit value??
         if ((fit_values is not None) and (rchi2 < self.rchi2_limit)) or self.use_all:
             return [fit_values, spectrum, location, signal_ranges, rms,
@@ -280,7 +280,7 @@ class GaussPyTrainingSet(object):
         maxima = argrelextrema(array, np.greater, order=self.order)
         return maxima
 
-    def gaussian_fitting(self, spectrum, maxima, rms, signal_mask=None):
+    def gaussian_fitting(self, spectrum, maxima, rms, mask_signal=None):
         # TODO: don't hardcode the value of stddev_ini
         stddev_ini = 2  # in channels
 
@@ -321,7 +321,7 @@ class GaussPyTrainingSet(object):
         else:
             combined_gauss = np.zeros(len(channels))
         if comps > 0:
-            rchi2 = goodness_of_fit(spectrum, combined_gauss, rms, comps, mask=signal_mask)
+            rchi2 = goodness_of_fit(spectrum, combined_gauss, rms, comps, mask=mask_signal)
         else:
             rchi2 = None
         return fit_values, rchi2
@@ -364,7 +364,7 @@ class GaussPyTrainingSet(object):
     def determine_gaussian_fit_models(self, gaussians, spectrum):
         fit_values = None
         optimizers.DEFAULT_MAXITER = 1000
-        channels = np.arange(self.nChannels)
+        channels = np.arange(self.n_channels)
 
         # To fit the data create a new superposition with initial
         # guesses for the parameters:
@@ -389,3 +389,4 @@ class GaussPyTrainingSet(object):
                                    gg_fit.mean.value,
                                    abs(gg_fit.stddev.value)])
         return fit_values
+mask_signal

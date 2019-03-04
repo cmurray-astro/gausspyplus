@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: batch_decomposition.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T10:23:32+01:00
+# @Last modified time: 2019-03-04T12:18:54+01:00
 
 import pickle
 import multiprocessing
@@ -101,28 +101,28 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=1):
 
  # use this only for testing purposes - shows weird behaviour in that it
  # freezes sometimes after the multiprocessing and is also slower
-def func(use_nCpus=None):
+def func(use_ncpus=None):
     # Multiprocessing code
     ncpus = multiprocessing.cpu_count()
-    if use_nCpus is None:
-        use_nCpus = int(0.75 * ncpus)
+    if use_ncpus is None:
+        use_ncpus = int(0.75 * ncpus)
     # p = multiprocessing.Pool(ncpus, init_worker)
-    print('using {} out of {} cpus'.format(use_nCpus, ncpus))
+    print('using {} out of {} cpus'.format(use_ncpus, ncpus))
     try:
-        results_list = parallel_process(ilist, decompose_one, n_jobs=use_nCpus)
+        results_list = parallel_process(ilist, decompose_one, n_jobs=use_ncpus)
     except KeyboardInterrupt:
         print("KeyboardInterrupt... quitting.")
         quit()
     return results_list
 
-# def func(use_nCpus=None):
+# def func(use_ncpus=None):
 #     # Multiprocessing code
 #     ncpus = multiprocessing.cpu_count()
-#     if use_nCpus is None:
-#         use_nCpus = int(0.75 * ncpus)
+#     if use_ncpus is None:
+#         use_ncpus = int(0.75 * ncpus)
 #     # p = multiprocessing.Pool(ncpus, init_worker)
-#     print(('using {} out of {} cpus'.format(use_nCpus, ncpus)))
-#     p = multiprocessing.Pool(use_nCpus, init_worker)
+#     print(('using {} out of {} cpus'.format(use_ncpus, ncpus)))
+#     p = multiprocessing.Pool(use_ncpus, init_worker)
 #     kwargs = {
 #         'total': len(ilist),
 #         'unit': 'it',

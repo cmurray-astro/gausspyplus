@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: shared_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T10:13:04+01:00
+# @Last modified time: 2019-03-04T12:37:59+01:00
 
 import numpy as np
 import warnings
@@ -105,12 +105,12 @@ def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aic
     return rchi2
 
 
-def gauss_mask(means, fwhms, nChannels, chi2_mask=None,
-               range_slices=False, padChannels=10):
-    mask = np.zeros(nChannels)
+def gauss_mask(means, fwhms, n_channels, chi2_mask=None,
+               range_slices=False, pad_channels=10):
+    mask = np.zeros(n_channels)
     for mean, fwhm in zip(means, fwhms):
-        if 2*fwhm < fwhm + padChannels:
-            pad = fwhm + padChannels
+        if 2*fwhm < fwhm + pad_channels:
+            pad = fwhm + pad_channels
         else:
             pad = 2*fwhm
         low, upp = int(mean - pad), int(mean + pad) + 2
@@ -153,7 +153,7 @@ def add_subtracted_nan_ranges(nan_ranges, ranges):
     return ranges
 
 
-def max_consecutive_channels(nChannels, p_limit):
+def max_consecutive_channels(n_channels, p_limit):
     """Determine the maximum number of random consecutive positive/negative channels.
 
     Calculate the number of consecutive positive or negative channels,
@@ -162,7 +162,7 @@ def max_consecutive_channels(nChannels, p_limit):
 
     Parameters
     ----------
-    nChannels : int
+    n_channels : int
         Number of channels of the spectrum.
     p_limit : float
         Maximum probability for consecutive positive/negative channels being
@@ -183,7 +183,7 @@ def max_consecutive_channels(nChannels, p_limit):
         for i in range(consec_channels - 1):
             a[i, 0] = a[i, i + 1] = 0.5
         a[consec_channels - 1, consec_channels - 1] = 1.0
-        if np.linalg.matrix_power(a, nChannels - 1)[0, consec_channels - 1] < p_limit:
+        if np.linalg.matrix_power(a, n_channels - 1)[0, consec_channels - 1] < p_limit:
             return consec_channels
 
 
@@ -246,15 +246,15 @@ def determine_peaks(spectrum, peak='both', amp_threshold=None):
         return consecutive_channels, ranges
 
 
-def mask_channels(nChannels, ranges, padChannels=None, remove_intervals=None):
+def mask_channels(n_channels, ranges, pad_channels=None, remove_intervals=None):
     import numpy as np
 
-    mask = np.zeros(nChannels)
+    mask = np.zeros(n_channels)
 
     for (lower, upper) in ranges:
-        if padChannels is not None:
-            lower = max(0, lower - padChannels)
-            upper = min(nChannels, upper + padChannels)
+        if pad_channels is not None:
+            lower = max(0, lower - pad_channels)
+            upper = min(n_channels, upper + pad_channels)
         mask[lower:upper] = 1
 
     if remove_intervals is not None:
@@ -264,10 +264,10 @@ def mask_channels(nChannels, ranges, padChannels=None, remove_intervals=None):
     return mask.astype('bool')
 
 
-# def mask_channels(nChannels, ranges, padChannels=None, remove_intervals=None):
+# def mask_channels(n_channels, ranges, pad_channels=None, remove_intervals=None):
 #     import numpy as np
 #
-#     mask = np.zeros(nChannels)
+#     mask = np.zeros(n_channels)
 #
 #     for (lower, upper) in ranges:
 #         pad_channels = int((upper - lower) / 2.)
@@ -325,33 +325,33 @@ def intervals_where_mask_is_true(mask):
     return ranges
 
 
-def add_buffer_to_intervals(ranges, nChannels, padChannels=5):
+def add_buffer_to_intervals(ranges, n_channels, pad_channels=5):
     """Extend given intervals to the left and right by a number of channels.
 
     Parameters
     ----------
     ranges : list
         List of intervals [(low, upp), ...].
-    nChannels : int
+    n_channels : int
         Number of channels of the spectrum.
-    padChannels : int
+    pad_channels : int
         Number of channels by which an interval (low, upp) gets extended to
         the left and right.
 
     Returns
     -------
     ranges_new : list
-        New list of intervals [(low, upp), ...] extended by padChannels to the
+        New list of intervals [(low, upp), ...] extended by pad_channels to the
         left and right.
 
     """
     ranges_new, intervals = ([] for i in range(2))
     for i, (low, upp) in enumerate(ranges):
-        low, upp = low - padChannels, upp + padChannels
+        low, upp = low - pad_channels, upp + pad_channels
         if low < 0:
             low = 0
-        if upp > nChannels:
-            upp = nChannels
+        if upp > n_channels:
+            upp = n_channels
 
         intervals.append((low, upp))
 
@@ -374,27 +374,27 @@ def add_buffer_to_intervals(ranges, nChannels, padChannels=5):
     return ranges_new
 
 
-def mask_covering_gaussians(means, fwhms, nChannels, remove_intervals=None,
-                            range_slices=False, padChannels=10, minChannels=100):
+def mask_covering_gaussians(means, fwhms, n_channels, remove_intervals=None,
+                            range_slices=False, pad_channels=10, min_channels=100):
     ranges = []
     for mean, fwhm in zip(means, fwhms):
-        if 2*fwhm < fwhm + padChannels:
-            pad = fwhm + padChannels
+        if 2*fwhm < fwhm + pad_channels:
+            pad = fwhm + pad_channels
         else:
             pad = 2*fwhm
         ranges.append((int(mean - pad), int(mean + pad) + 2))
 
-    mask = mask_channels(nChannels, ranges, remove_intervals=remove_intervals)
+    mask = mask_channels(n_channels, ranges, remove_intervals=remove_intervals)
 
     ranges = intervals_where_mask_is_true(mask)
 
-    if padChannels is not None:
+    if pad_channels is not None:
         i = 0
-        while np.count_nonzero(mask) < minChannels:
+        while np.count_nonzero(mask) < min_channels:
             i += 1
-            ranges = add_buffer_to_intervals(ranges, nChannels, padChannels=i*padChannels)
-            mask = mask_channels(nChannels, ranges, remove_intervals=remove_intervals)
-            if 2*i*padChannels >= minChannels:
+            ranges = add_buffer_to_intervals(ranges, n_channels, pad_channels=i*pad_channels)
+            mask = mask_channels(n_channels, ranges, remove_intervals=remove_intervals)
+            if 2*i*pad_channels >= min_channels:
                 break
 
     if range_slices:
@@ -431,22 +431,22 @@ def check_if_intervals_contain_signal(spectrum, rms, ranges, snr=3.,
         New list of intervals [(low, upp), ...] that contain positive signal.
 
     """
-    # TODO: incorporate minChannelsSnr, rethink snr - 0.5 ?
+    # TODO: incorporate min_channelsSnr, rethink snr - 0.5 ?
     ranges_new = []
     for low, upp in ranges:
         if np.max(spectrum[low:upp]) > snr*rms:
-            # if sum(spectrum[low:upp] > (snr - 0.5)*rms) >= minChannelsSnr:
+            # if sum(spectrum[low:upp] > (snr - 0.5)*rms) >= min_channelsSnr:
             if np.sum(spectrum[low:upp]) / (np.sqrt(upp - low)*rms) > significance:
                 ranges_new.append([low, upp])
     return ranges_new
 
 
 def get_signal_ranges(spectrum, rms, maxConsecutiveChannels=14,
-                      padChannels=5, snr=3., significance=5.,
-                      minChannels=100, remove_intervals=None):
+                      pad_channels=5, snr=3., significance=5.,
+                      min_channels=100, remove_intervals=None):
     import numpy as np
 
-    nChannels = len(spectrum)
+    n_channels = len(spectrum)
 
     max_amp_vals, ranges = determine_peaks(
         spectrum, peak='positive', amp_threshold=snr*rms)
@@ -457,16 +457,16 @@ def get_signal_ranges(spectrum, rms, maxConsecutiveChannels=14,
     if not ranges:
         return []
     i = 0
-    # TODO: rework this, what if max. ranges [0, nChannels] is reached?
-    # more intelligent selection of padChannels?
-    if padChannels is not None:
+    # TODO: rework this, what if max. ranges [0, n_channels] is reached?
+    # more intelligent selection of pad_channels?
+    if pad_channels is not None:
         while True:
             i += 1
-            ranges = add_buffer_to_intervals(ranges, nChannels, padChannels=i*padChannels)
-            mask_signal_new = mask_channels(nChannels, ranges, remove_intervals=remove_intervals)
+            ranges = add_buffer_to_intervals(ranges, n_channels, pad_channels=i*pad_channels)
+            mask_signal_new = mask_channels(n_channels, ranges, remove_intervals=remove_intervals)
             ranges = intervals_where_mask_is_true(mask_signal_new)
-            if (np.count_nonzero(mask_signal_new) >= minChannels) or \
-                    (2*i*padChannels >= minChannels):
+            if (np.count_nonzero(mask_signal_new) >= min_channels) or \
+                    (2*i*pad_channels >= min_channels):
                 return ranges
     return ranges
 
@@ -492,14 +492,14 @@ def correct_rms(averageRms=None, idx=None):
         return np.nan
 
 
-def get_rms_noise(spectrum, maxConsecutiveChannels=14, padChannels=5, averageRms=None, idx=None):
+def get_rms_noise(spectrum, maxConsecutiveChannels=14, pad_channels=5, averageRms=None, idx=None):
     from astropy.stats import median_absolute_deviation
     import numpy as np
 
-    nChannels = len(spectrum)
+    n_channels = len(spectrum)
     consecutive_channels, ranges = determine_peaks(spectrum)
     mask = consecutive_channels > maxConsecutiveChannels
-    mask_1 = mask_channels(nChannels, ranges[mask], padChannels=padChannels)
+    mask_1 = mask_channels(n_channels, ranges[mask], pad_channels=pad_channels)
 
     if np.count_nonzero(~mask_1) == 0:
         return correct_rms(averageRms=averageRms, idx=idx)
@@ -519,7 +519,7 @@ def get_rms_noise(spectrum, maxConsecutiveChannels=14, padChannels=5, averageRms
         inds_ranges = np.digitize(inds_high_amps, ranges[:, 0]) - 1
         ranges = ranges[inds_ranges]
 
-        mask_2 = mask_channels(nChannels, ranges, padChannels=padChannels)
+        mask_2 = mask_channels(n_channels, ranges, pad_channels=pad_channels)
 
         mask_total = mask_1 + mask_2
     else:

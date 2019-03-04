@@ -2,7 +2,7 @@
 # @Date:   2019-02-26T16:38:04+01:00
 # @Filename: prepare.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T11:31:26+01:00
+# @Last modified time: 2019-03-04T12:41:35+01:00
 
 import ast
 import configparser
@@ -25,24 +25,24 @@ from gausspyplus.miscellaneous_functions import set_up_logger
 
 
 class GaussPyPrepare(object):
-    def __init__(self, pathToFile, gpyDirname=None, configFile=''):
+    def __init__(self, pathToFile, gpy_dirname=None, configFile=''):
         self.pathToFile = pathToFile
-        self.gpyDirname = gpyDirname
+        self.gpy_dirname = gpy_dirname
 
-        self.gausspyPickle = True
+        self.gausspy_pickle = True
         self.testing = False
-        self.dataLocation = None
+        self.data_location = None
         self.simulation = False
 
-        self.rmsFromData = True
+        self.rms_from_data = True
         self.average_rms = None
         #  TODO: check if this is always calculated from different spectra for
         #  different runs
-        self.numberRmsSpectra = 1000
-        self.pLimit = 0.025
-        self.padChannels = 5
-        self.signalMask = True
-        self.minChannels = 100
+        self.n_spectra_rms = 1000
+        self.p_limit = 0.025
+        self.pad_channels = 5
+        self.signal_mask = True
+        self.min_channels = 100
         self.mask_out_ranges = []
 
         self.snr = 3.
@@ -50,7 +50,7 @@ class GaussPyPrepare(object):
         self.snr_noise_spike = 4.
 
         self.suffix = ''
-        self.use_nCpus = None
+        self.use_ncpus = None
         self.log_output = True
         self.verbose = True
         self.overwrite = True
@@ -100,9 +100,9 @@ class GaussPyPrepare(object):
     #     self.logger = logging.getLogger(__name__)
 
     def check_settings(self):
-        if self.testing and (self.dataLocation is None):
+        if self.testing and (self.data_location is None):
             errorMessage = \
-                """specify 'dataLocation' as (y, x) for 'testing'"""
+                """specify 'data_location' as (y, x) for 'testing'"""
             raise Exception(errorMessage)
 
         if self.simulation and (self.average_rms is None):
@@ -138,14 +138,14 @@ class GaussPyPrepare(object):
         self.parentDirname = os.path.dirname(self.pathToFile)
         self.file = os.path.basename(self.pathToFile)
         self.filename, self.fileExtension = os.path.splitext(self.file)
-        if self.gpyDirname is not None:
-            self.parentDirname = self.gpyDirname
+        if self.gpy_dirname is not None:
+            self.parentDirname = self.gpy_dirname
         self.pickleDirname = os.path.join(self.parentDirname, 'gpy_prepared')
 
         hdu = fits.open(self.pathToFile)[0]
 
         if self.simulation:
-            self.rmsFromData = False
+            self.rms_from_data = False
             hdu = add_noise(self.average_rms, hdu=hdu, get_hdu=True,
                             random_seed=self.random_seed)
 
@@ -158,25 +158,25 @@ class GaussPyPrepare(object):
         self.errors = np.empty((self.data.shape[1], self.data.shape[2]))
 
         if self.average_rms is None:
-            self.rmsFromData = True
+            self.rms_from_data = True
 
         if self.testing:
-            ypos = self.dataLocation[0]
-            xpos = self.dataLocation[1]
+            ypos = self.data_location[0]
+            xpos = self.data_location[1]
             self.say('\nTesting: using only pixel at location ({}, {})'.format(
                 ypos, xpos))
             self.data = self.data[:, ypos, xpos]
             self.data = self.data[:, np.newaxis, np.newaxis]
-            self.rmsFromData = False
+            self.rms_from_data = False
 
-        self.nChannels = self.data.shape[0]
-        if self.nChannels < self.minChannels:
-            self.signalMask = False
+        self.n_channels = self.data.shape[0]
+        if self.n_channels < self.min_channels:
+            self.signal_mask = False
 
         self.maxConsecutiveChannels = max_consecutive_channels(
-            self.nChannels, self.pLimit)
+            self.n_channels, self.p_limit)
 
-        if self.rmsFromData:
+        if self.rms_from_data:
             self.calculate_average_rms_from_data()
 
     def prepare_cube(self):
@@ -184,15 +184,15 @@ class GaussPyPrepare(object):
         self.getting_ready()
         self.initialize()
 
-        if self.gausspyPickle:
+        if self.gausspy_pickle:
             self.prepare_gausspy_pickle()
 
     def calculate_average_rms_from_data(self):
         self.say('\ncalculating average rms from data...')
 
         self.average_rms = calculate_average_rms_noise(
-            self.data.copy(), self.numberRmsSpectra,
-            padChannels=self.padChannels, random_seed=self.random_seed,
+            self.data.copy(), self.n_spectra_rms,
+            pad_channels=self.pad_channels, random_seed=self.random_seed,
             maxConsecutiveChannels=self.maxConsecutiveChannels)
 
         self.say('>> calculated rms value of {:.3f} from data'.format(
@@ -217,13 +217,13 @@ class GaussPyPrepare(object):
         data['data_list'], data['error'], data['index'], data['location'] = (
             [] for _ in range(4))
 
-        if self.signalMask:
+        if self.signal_mask:
             data['signal_ranges'], data['noise_spike_ranges'] = ([] for _ in range(2))
 
         import gausspyplus.parallel_processing
         gausspyplus.parallel_processing.init([locations, [self]])
 
-        results_list = gausspyplus.parallel_processing.func(use_nCpus=self.use_nCpus, function='gpy_noise')
+        results_list = gausspyplus.parallel_processing.func(use_ncpus=self.use_ncpus, function='gpy_noise')
 
         print('SUCCESS\n')
 
@@ -244,7 +244,7 @@ class GaussPyPrepare(object):
                 # data['data_list'].append(self.data[:, ypos, xpos])
                 data['data_list'].append(spectrum)
                 data['error'].append([error])
-                if self.signalMask:
+                if self.signal_mask:
                     # TODO: make noise_spike_ranges independent from signal_ranges??
                     data['signal_ranges'].append(signal_ranges)
                     data['noise_spike_ranges'].append(noise_spike_ranges)
@@ -277,23 +277,23 @@ class GaussPyPrepare(object):
         signal_ranges, noise_spike_ranges = (None for _ in range(2))
 
         if self.mask_out_ranges:
-            nan_mask = mask_channels(self.nChannels, self.mask_out_ranges)
+            nan_mask = mask_channels(self.n_channels, self.mask_out_ranges)
             spectrum[nan_mask] = np.nan
 
         #  if spectrum contains nans they will be replaced by noise values
         #  randomly sampled from the calculated rms value
         rms = determine_noise(
             spectrum, maxConsecutiveChannels=self.maxConsecutiveChannels,
-            padChannels=self.padChannels, idx=idx, averageRms=self.average_rms)
+            pad_channels=self.pad_channels, idx=idx, averageRms=self.average_rms)
 
-        if self.signalMask and not np.isnan(rms):
+        if self.signal_mask and not np.isnan(rms):
             noise_spike_ranges = get_noise_spike_ranges(
                 spectrum, rms, snr_noise_spike=self.snr_noise_spike)
             if self.mask_out_ranges:
                 noise_spike_ranges += self.mask_out_ranges
             signal_ranges = get_signal_ranges(
                 spectrum, rms, snr=self.snr, significance=self.significance, maxConsecutiveChannels=self.maxConsecutiveChannels,
-                padChannels=self.padChannels, minChannels=self.minChannels,
+                pad_channels=self.pad_channels, min_channels=self.min_channels,
                 remove_intervals=noise_spike_ranges)
 
         return [idx, spectrum, location, rms, signal_ranges, noise_spike_ranges]

@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: gp.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T11:26:15+01:00
+# @Last modified time: 2019-03-04T12:19:03+01:00
 
 import os
 import pickle
@@ -24,7 +24,7 @@ class GaussianDecomposer(object):
             self.p = temp.p
         else:
             self.p = {'alpha1': None, 'alpha2': None, 'training_results': None,
-                      'improve_fitting_dict': None, 'use_nCpus': None,
+                      'improve_fitting_dict': None, 'use_ncpus': None,
                       'phase': 'one', 'SNR2_thresh': 5., 'SNR_thresh': 5.,
                       'deblend': True, 'mode': 'conv', 'BLFrac': 0.1, 'verbose': False, 'plot': False,
                       'perform_final_fit': True}
@@ -124,7 +124,7 @@ class GaussianDecomposer(object):
         pickle.dump([self, science_data_path, ilist], open('batchdecomp_temp.pickle', 'wb'), protocol=2)
         from . import batch_decomposition
         batch_decomposition.init()
-        result_list = batch_decomposition.func(use_nCpus=self.p['use_nCpus'])
+        result_list = batch_decomposition.func(use_ncpus=self.p['use_ncpus'])
         # print 'SUCCESS'
 
         new_keys = ['index_fit', 'amplitudes_fit', 'fwhms_fit', 'means_fit',

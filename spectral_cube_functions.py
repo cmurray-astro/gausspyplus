@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T11:15:36+01:00
+# @Last modified time: 2019-03-04T12:38:32+01:00
 
 import getpass
 import itertools
@@ -372,28 +372,28 @@ def spectral_smoothing(data, header, save=False, pathOutputFile=None,
     return data, header
 
 
-def determine_noise(spectrum, maxConsecutiveChannels=14, padChannels=5,
+def determine_noise(spectrum, maxConsecutiveChannels=14, pad_channels=5,
                     idx=None, averageRms=None, random_seed=111):
     np.random.seed(random_seed)
     if not np.isnan(spectrum).all():
         if np.isnan(spectrum).any():
             # TODO: Case where spectrum contains nans and only positive values
             nans = np.isnan(spectrum)
-            error = get_rms_noise(spectrum[~nans], maxConsecutiveChannels=maxConsecutiveChannels, padChannels=padChannels, idx=idx, averageRms=averageRms)
+            error = get_rms_noise(spectrum[~nans], maxConsecutiveChannels=maxConsecutiveChannels, pad_channels=pad_channels, idx=idx, averageRms=averageRms)
             spectrum[nans] = np.random.randn(len(spectrum[nans])) * error
 
         elif (spectrum >= 0).all():
             warnings.warn('Masking spectra that contain only values >= 0')
             error = np.NAN
         else:
-            error = get_rms_noise(spectrum, maxConsecutiveChannels=maxConsecutiveChannels, padChannels=padChannels, idx=idx, averageRms=averageRms)
+            error = get_rms_noise(spectrum, maxConsecutiveChannels=maxConsecutiveChannels, pad_channels=pad_channels, idx=idx, averageRms=averageRms)
     else:
         error = np.NAN
     return error
 
 
 def calculate_average_rms_noise(data, numberRmsSpectra, random_seed=111,
-                                maxConsecutiveChannels=14, padChannels=5):
+                                maxConsecutiveChannels=14, pad_channels=5):
     import random
 
     random.seed(random_seed)
@@ -409,7 +409,7 @@ def calculate_average_rms_noise(data, numberRmsSpectra, random_seed=111,
         spectrum = data[:, y, x]
         error = determine_noise(
             spectrum, maxConsecutiveChannels=maxConsecutiveChannels,
-            padChannels=padChannels)
+            pad_channels=pad_channels)
 
         if not np.isnan(error):
             rmsList.append(error)
@@ -559,11 +559,11 @@ def make_subcube(sliceParams, pathToInputFile=None, hdu=None, dtype='float32',
 
 def apply_noise_threshold(data, snr=3, pathToNoiseMap=None,
                           sliceParams=(slice(None), slice(None)),
-                          pLimit=0.025, padChannels=5, use_nCpus=None):
+                          p_limit=0.025, pad_channels=5, use_ncpus=None):
     """"""
     yMax = data.shape[1]
     xMax = data.shape[2]
-    nChannels = data.shape[0]
+    n_channels = data.shape[0]
     locations = list(
             itertools.product(range(yMax), range(xMax)))
 
@@ -576,12 +576,12 @@ def apply_noise_threshold(data, snr=3, pathToNoiseMap=None,
     else:
         print('\napplying noise threshold to data with snr={}...'.format(snr))
         noiseMap = np.zeros((yMax, xMax))
-        maxConsecutiveChannels = max_consecutive_channels(nChannels, pLimit)
+        maxConsecutiveChannels = max_consecutive_channels(n_channels, p_limit)
 
         import gausspyplus.parallel_processing
-        gausspyplus.parallel_processing.init([locations, determine_noise, [data, maxConsecutiveChannels, padChannels]])
+        gausspyplus.parallel_processing.init([locations, determine_noise, [data, maxConsecutiveChannels, pad_channels]])
 
-        results_list = gausspyplus.parallel_processing.func(use_nCpus=use_nCpus, function='noise')
+        results_list = gausspyplus.parallel_processing.func(use_ncpus=use_ncpus, function='noise')
 
         for i, rms in tqdm(enumerate(results_list)):
             if not isinstance(rms, np.float):
@@ -643,9 +643,9 @@ def get_moment_map(data, wcs, order=0, linewidth='sigma', vel_unit=u.km/u.s):
 def moment_map(hdu=None, pathToInputFile=None, sliceParams=None,
                pathToOutputFile=None,
                applyNoiseThreshold=False, snr=3, order=0, linewidth='sigma',
-               pLimit=0.025, padChannels=5,
+               p_limit=0.025, pad_channels=5,
                vel_unit=u.km/u.s, pathToNoiseMap=None,
-               save=False, get_hdu=True, use_nCpus=None,
+               save=False, get_hdu=True, use_ncpus=None,
                restoreNans=False, nanMask=None):
     """
     Previously called 'make_moment_fits'
@@ -673,8 +673,8 @@ def moment_map(hdu=None, pathToInputFile=None, sliceParams=None,
     if applyNoiseThreshold:
         data = apply_noise_threshold(data, snr=snr, sliceParams=sliceParams,
                                      pathToNoiseMap=pathToNoiseMap,
-                                     pLimit=pLimit, padChannels=padChannels,
-                                     use_nCpus=use_nCpus)
+                                     p_limit=p_limit, pad_channels=pad_channels,
+                                     use_ncpus=use_ncpus)
 
     hdu = get_moment_map(data, wcs, order=order, linewidth=linewidth,
                          vel_unit=vel_unit)
@@ -773,9 +773,9 @@ def get_pv_map(data, header, sum_over_axis=1, vel_unit=u.km/u.s):
 
 def pv_map(pathToInputFile=None, hdu=None, sliceParams=None,
            pathToOutputFile=None, pathToNoiseMap=None,
-           applyNoiseThreshold=False, snr=3, pLimit=0.025, padChannels=5,
+           applyNoiseThreshold=False, snr=3, p_limit=0.025, pad_channels=5,
            sumOverLatitude=True, vel_unit=u.km/u.s,
-           save=False, get_hdu=True, use_nCpus=None):
+           save=False, get_hdu=True, use_ncpus=None):
     """
     Previously called 'make_pv_fits'
     """
@@ -798,8 +798,8 @@ def pv_map(pathToInputFile=None, hdu=None, sliceParams=None,
     if applyNoiseThreshold:
         data = apply_noise_threshold(data, snr=snr, sliceParams=sliceParams,
                                      pathToNoiseMap=pathToNoiseMap,
-                                     pLimit=pLimit, padChannels=padChannels,
-                                     use_nCpus=use_nCpus)
+                                     p_limit=p_limit, pad_channels=pad_channels,
+                                     use_ncpus=use_ncpus)
 
     wcs = WCS(header)
     #  have to reverse the axis since we change between FITS and np standards

@@ -1,8 +1,8 @@
-# @Author: riener
+n_max_jump_comps# @Author: riener
 # @Date:   2019-03-03T20:27:37+01:00
 # @Filename: config_file.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:03:30+01:00
+# @Last modified time: 2019-03-04T12:48:24+01:00
 
 import configparser
 import textwrap
@@ -19,7 +19,7 @@ def make(mode='simple', outputDir=''):
         verbose = True
         overwrite = True
         suffix = ''
-        use_nCpus = None
+        use_ncpus = None
 
         snr = 3.
         significance = 5.
@@ -29,7 +29,7 @@ def make(mode='simple', outputDir=''):
         fwhm_factor: 2.
         rchi2_limit = 1.5
 
-        twoPhaseDecomposition = True
+        two_phase_decomposition = True
 
         refit_blended: True
         refit_broad: True
@@ -37,10 +37,10 @@ def make(mode='simple', outputDir=''):
         refit_rchi2 = False
         refit_ncomps = False
 
-        pLimit = 0.025
-        signalMask = True
-        padChannels = 5
-        minChannels = 100
+        p_limit = 0.025
+        signal_mask = True
+        pad_channels = 5
+        min_channels = 100
         mask_out_ranges = []
 
         random_seed = 111
@@ -52,53 +52,52 @@ def make(mode='simple', outputDir=''):
 
         [training]
 
-        pathToTrainingSet = ''
-        trainingSet = True
-        numberSpectra = 5
+        path_to_training_set = ''
+        training_set = True
+        n_spectra = 5
         order = 6
         use_all = False
 
-        paramsFromData = True
+        params_from_data = True
         alpha1_guess = None
         alpha2_guess = None
-        snrThresh = None
-        snr2Thresh = None
+        snr_thresh = None
+        snr2_thresh = None
 
-        createTrainingSet = False
-        nChannels = None
-        nSpectra = None
-        nCompsLims = None
-        ampLims = None
-        fwhmLims = None
-        meanLims = None
+        create_training_set = False
+        n_channels = None
+        ncomps_limits = None
+        amp_limits = None
+        fwhm_limits = None
+        mean_limits = None
         rms = None
-        numberRmsSpectra = 5000
-        meanEdgeChans = 10
+        n_spectra_rms = 5000
+        n_edge_channels = 10
 
 
         [preparation]
 
-        gpyDirname = ''
-        numberRmsSpectra = 1000
+        gpy_dirname = ''
+        n_spectra_rms = 1000
 
-        gausspyPickle = True
-        dataLocation = None
+        gausspy_pickle = True
+        data_location = None
         simulation = False
 
-        rmsFromData = True
+        rms_from_data = True
         average_rms = None
 
 
         [decomposition]
 
-        gaussPyDecomposition = True
-        trainingSet = False
-        saveInitialGuesses = False
+        gausspy_decomposition = True
+        training_set = False
+        save_initial_guesses = False
         alpha1 = None
         alpha2 = None
-        snrThresh = None
-        snr2Thresh = None
-        decompDirname = ''
+        snr_thresh = None
+        snr2_thresh = None
+        decomp_dirname = ''
 
         improve_fitting: True
         min_offset: 2.
@@ -111,9 +110,9 @@ def make(mode='simple', outputDir=''):
 
         exclude_flagged = False
         rchi2_limit_refit = None
-        maxDiffComps = 2
-        maxJumpComps = 2
-        nMaxJumpComps = 2
+        max_diff_comps = 2
+        max_jump_comps = 2
+        n_max_jump_comps = 2
         max_refitting_iteration = 20
         flag_blended = False
         flag_residual = False
@@ -144,7 +143,7 @@ def make(mode='simple', outputDir=''):
             filename = ''
 
             #  number of CPUs to use in multiprocessing (default: 75% of all CPUs)
-            use_nCpus = None
+            use_ncpus = None
 
             #  minimum signal-to-noise (S/N) ratio
             snr = 3.

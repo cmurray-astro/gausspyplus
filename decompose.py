@@ -2,7 +2,7 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T11:50:36+01:00
+# @Last modified time: 2019-03-04T12:43:14+01:00
 
 from __future__ import print_function
 
@@ -48,27 +48,27 @@ class GaussPyDecompose(object):
         Filename of the pickled dictionary produced by GaussPyPrepare.
     fileExtension : str
         Extension of the pickled dictionary produced by GaussPyPrepare.
-    decompDirname : str
+    decomp_dirname : str
         Path to directory in which decomposition results are saved.
     parentDirname : str
         Parent directory of 'gpy_prepared'.
-    gaussPyDecomposition : bool
+    gausspy_decomposition : bool
         'True' if data should be decomposed. 'False' if decomposition results are loaded.
-    twoPhaseDecomposition : bool
+    two_phase_decomposition : bool
         'True' (default) uses two smoothing parameters (alpha1, alpha2) for the decomposition. 'False' uses only the alpha1 smoothing parameter.
-    trainingSet : bool
+    training_set : bool
         Default is 'False'. Set to 'True' if training set is decomposed.
-    saveInitialGuesses : bool
+    save_initial_guesses : bool
         Default is 'False'. Set to 'True' if initial GaussPy fitting guesses should be saved.
     alpha1 : float
         First smoothing parameter.
     alpha2 : float
-        Second smoothing parameter. Only used if twoPhaseDecomposition is set to 'True'
-    snrThresh : float
+        Second smoothing parameter. Only used if two_phase_decomposition is set to 'True'
+    snr_thresh : float
         S/N threshold used for the original spectrum.
-    snr2Thresh : float
+    snr2_thresh : float
         S/N threshold used for the second derivate of the smoothed spectrum.
-    use_nCpus : int
+    use_ncpus : int
         Number of CPUs used in the decomposition. By default 75% of all CPUs on the machine are used.
     fitting : dct
         Description of attribute `fitting`.
@@ -90,17 +90,17 @@ class GaussPyDecompose(object):
         self.dirname = os.path.dirname(pathToPickleFile)
         self.file = os.path.basename(pathToPickleFile)
         self.filename, self.fileExtension = os.path.splitext(self.file)
-        self.decompDirname = None
+        self.decomp_dirname = None
         self.parentDirname = os.path.dirname(self.dirname)
 
-        self.gaussPyDecomposition = True
-        self.twoPhaseDecomposition = True
-        self.trainingSet = False
-        self.saveInitialGuesses = False
+        self.gausspy_decomposition = True
+        self.two_phase_decomposition = True
+        self.training_set = False
+        self.save_initial_guesses = False
         self.alpha1 = None
         self.alpha2 = None
-        self.snrThresh = None
-        self.snr2Thresh = None
+        self.snr_thresh = None
+        self.snr2_thresh = None
 
         self.improve_fitting = True
         self.min_fwhm = 1.
@@ -123,7 +123,7 @@ class GaussPyDecompose(object):
         self.verbose = True
         self.suffix = ''
         self.log_output = True
-        self.use_nCpus = None
+        self.use_ncpus = None
 
         if configFile:
             self.get_values_from_config_file(configFile)
@@ -219,35 +219,35 @@ class GaussPyDecompose(object):
             self.wcs.wcs.cdelt[2] * self.wcs.wcs.cunit[2]).to(
                 self.vel_unit).value
 
-        if self.decompDirname is None:
-            decompDirname = os.path.normpath(
+        if self.decomp_dirname is None:
+            decomp_dirname = os.path.normpath(
                     self.dirname + os.sep + os.pardir)
-            self.decompDirname = os.path.join(decompDirname, 'gpy_decomposed')
-            if not os.path.exists(self.decompDirname):
-                os.makedirs(self.decompDirname)
+            self.decomp_dirname = os.path.join(decomp_dirname, 'gpy_decomposed')
+            if not os.path.exists(self.decomp_dirname):
+                os.makedirs(self.decomp_dirname)
 
     def check_settings(self):
         if self.snr_negative is None:
             self.snr_negative = self.snr
         if self.snr_fit is None:
             self.snr_fit = self.snr
-        if self.snrThresh is None:
-            self.snrThresh = self.snr
-        if self.snr2Thresh is None:
-            self.snr2Thresh = self.snr
+        if self.snr_thresh is None:
+            self.snr_thresh = self.snr
+        if self.snr2_thresh is None:
+            self.snr2_thresh = self.snr
 
-        if self.gaussPyDecomposition and (self.alpha1 is None or
-                                          self.snrThresh is None or
-                                          self.snr2Thresh is None):
+        if self.gausspy_decomposition and (self.alpha1 is None or
+                                           self.snr_thresh is None or
+                                           self.snr2_thresh is None):
             errorMessage = \
-                """gaussPyDecomposition needs alpha1, snrThresh and
-                snr2Thresh values"""
+                """gausspy_decomposition needs alpha1, snr_thresh and
+                snr2_thresh values"""
             raise Exception(errorMessage)
 
-        if self.gaussPyDecomposition and self.twoPhaseDecomposition and \
+        if self.gausspy_decomposition and self.two_phase_decomposition and \
                 (self.alpha2 is None):
                     errorMessage = \
-                        """twoPhaseDecomposition needs alpha2 value"""
+                        """two_phase_decomposition needs alpha2 value"""
                     raise Exception(errorMessage)
 
         if self.main_beam_efficiency is None:
@@ -259,7 +259,7 @@ class GaussPyDecompose(object):
     def decompose(self):
         self.initialize_data()
 
-        if self.gaussPyDecomposition:
+        if self.gausspy_decomposition:
             self.gaussPy_decomposition()
 
     def decomposition_settings(self):
@@ -271,11 +271,11 @@ class GaussPyDecompose(object):
             '\nalpha2: {c}'
             '\nSNR1: {d}'
             '\nSNR2: {e}').format(
-                a=self.twoPhaseDecomposition,
+                a=self.two_phase_decomposition,
                 b=self.alpha1,
                 c=self.alpha2,
-                d=self.snrThresh,
-                e=self.snr2Thresh)
+                d=self.snr_thresh,
+                e=self.snr2_thresh)
         self.say(string_gausspy)
 
         string_gausspy_plus = ''
@@ -295,18 +295,18 @@ class GaussPyDecompose(object):
 
         from .gausspy_py3 import gp as gp
         g = gp.GaussianDecomposer()  # Load GaussPy
-        g.set('use_nCpus', self.use_nCpus)
-        g.set('SNR_thresh', self.snrThresh)
-        g.set('SNR2_thresh', self.snr2Thresh)
+        g.set('use_ncpus', self.use_ncpus)
+        g.set('SNR_thresh', self.snr_thresh)
+        g.set('SNR2_thresh', self.snr2_thresh)
         g.set('improve_fitting_dict', self.fitting)
         g.set('alpha1', self.alpha1)
 
-        if not self.trainingSet:
+        if not self.training_set:
             if self.testing:
                 g.set('verbose', True)
                 g.set('plot', True)
 
-        if self.twoPhaseDecomposition:
+        if self.two_phase_decomposition:
             g.set('phase', 'two')
             g.set('alpha2', self.alpha2)
         else:
@@ -316,14 +316,14 @@ class GaussPyDecompose(object):
 
         self.save_final_results()
 
-        if self.saveInitialGuesses:
+        if self.save_initial_guesses:
             self.save_initial_guesses()
 
     def save_initial_guesses(self):
         self.say('\npickle dump GaussPy initial guesses...')
 
         filename = '{}{}_fit_ini.pickle'.format(self.filename, self.suffix)
-        pathname = os.path.join(self.decompDirname, filename)
+        pathname = os.path.join(self.decomp_dirname, filename)
 
         dct_initial_guesses = {}
 
@@ -332,17 +332,17 @@ class GaussPyDecompose(object):
             dct_initial_guesses[key] = self.decomposition[key]
 
         pickle.dump(dct_initial_guesses, open(pathname, 'wb'), protocol=2)
-        self.say(">> saved as '{}' in {}".format(filename, self.decompDirname))
+        self.say(">> saved as '{}' in {}".format(filename, self.decomp_dirname))
 
     def save_final_results(self):
         self.say('\npickle dump GaussPy final results...')
 
-        dct_gausspy_settings = {"two_phase": self.twoPhaseDecomposition,
+        dct_gausspy_settings = {"two_phase": self.two_phase_decomposition,
                                 "alpha1": self.alpha1,
-                                "snr1_thresh": self.snrThresh,
-                                "snr2_thresh": self.snr2Thresh}
+                                "snr1_thresh": self.snr_thresh,
+                                "snr2_thresh": self.snr2_thresh}
 
-        if self.twoPhaseDecomposition:
+        if self.two_phase_decomposition:
             dct_gausspy_settings["alpha2"] = self.alpha2
 
         dct_final_guesses = {}
@@ -355,7 +355,7 @@ class GaussPyDecompose(object):
 
         dct_final_guesses["gausspy_settings"] = dct_gausspy_settings
 
-        if not self.trainingSet:
+        if not self.training_set:
             dct_final_guesses["improve_fit_settings"] = self.fitting
         else:
             dct_final_guesses["header"] = self.header
@@ -364,15 +364,15 @@ class GaussPyDecompose(object):
             dct_final_guesses["error"] = self.errors
 
         filename = '{}{}_fit_fin.pickle'.format(self.filename, self.suffix)
-        pathname = os.path.join(self.decompDirname, filename)
+        pathname = os.path.join(self.decomp_dirname, filename)
         pickle.dump(dct_final_guesses, open(pathname, 'wb'), protocol=2)
-        self.say(">> saved as '{}' in {}".format(filename, self.decompDirname))
+        self.say(">> saved as '{}' in {}".format(filename, self.decomp_dirname))
 
     def load_final_results(self, pathToDecomp):
         self.initialize_data()
         self.say('\npickle load final GaussPy results...')
 
-        self.decompDirname = os.path.dirname(pathToDecomp)
+        self.decomp_dirname = os.path.dirname(pathToDecomp)
         with open(pathToDecomp, "rb") as pickle_file:
             self.decomposition = pickle.load(pickle_file, encoding='latin1')
 
@@ -407,12 +407,12 @@ class GaussPyDecompose(object):
     #     if self.headerComments is not None:
     #         self.header['COMMENT'] = self.headerComments
     #
-    #     if self.gaussPyDecomposition:
-    #         card = fits.Card('hierarch SNR_1', self.snrThresh,
+    #     if self.gausspy_decomposition:
+    #         card = fits.Card('hierarch SNR_1', self.snr_thresh,
     #                          'threshold for GaussPy decomposition')
     #         self.header.append(card)
     #
-    #         card = fits.Card('hierarch SNR_2', self.snr2Thresh,
+    #         card = fits.Card('hierarch SNR_2', self.snr2_thresh,
     #                          'threshold for GaussPy decomposition')
     #         self.header.append(card)
     #
@@ -420,7 +420,7 @@ class GaussPyDecompose(object):
     #         card = fits.Card('hierarch ALPHA1', self.alpha1, text)
     #         self.header.append(card)
     #
-    #         if self.twoPhaseDecomposition:
+    #         if self.two_phase_decomposition:
     #             text = str('2nd parameter for 2-phase decomposition')
     #             card = fits.Card('hierarch ALPHA2', self.alpha2, text)
     #             self.header.append(card)
@@ -491,20 +491,20 @@ class GaussPyDecompose(object):
         array[self.nan_mask] = np.nan
 
         comments = [comment]
-        if self.gaussPyDecomposition:
+        if self.gausspy_decomposition:
             for name, value in zip(
                     ['SNR_1', 'SNR_2', 'ALPHA1'],
-                    [self.snrThresh, self.snr2Thresh, self.alpha1]):
+                    [self.snr_thresh, self.snr2_thresh, self.alpha1]):
                 comments.append('GaussPy+ parameter {}={}'.format(name, value))
 
-            if self.twoPhaseDecomposition:
+            if self.two_phase_decomposition:
                 comments.append('GaussPy+ parameter {}={}'.format(
                     'ALPHA2', self.alpha2))
 
         self.header = update_header(
             self.header, comments=comments, write_meta=True)
 
-        pathToFile = os.path.join(self.decompDirname, 'FITS', filename)
+        pathToFile = os.path.join(self.decomp_dirname, 'FITS', filename)
         save_fits(array, self.header, pathToFile, verbose=False)
         self.say('>> saved {} in {}'.format(
             filename, os.path.dirname(pathToFile)))

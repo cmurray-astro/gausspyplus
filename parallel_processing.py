@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: parallel_processing.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T10:21:25+01:00
+# @Last modified time: 2019-03-04T12:25:38+01:00
 
 """Parallelization routine.
 
@@ -36,7 +36,7 @@ def calculate_noise(i):
     xpos = mp_data[i][1]
     ypos = mp_data[i][0]
     spectrum = mp_params[0][:, ypos, xpos]
-    result = determine_noise(spectrum, maxConsecutiveChannels=mp_params[1], padChannels=mp_params[2], idx=i, averageRms=mp_params[3])
+    result = determine_noise(spectrum, maxConsecutiveChannels=mp_params[1], pad_channels=mp_params[2], idx=i, averageRms=mp_params[3])
     return result
 
 
@@ -101,22 +101,22 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3):
     return front + out
 
 
-def func(use_nCpus=None, function='noise'):
+def func(use_ncpus=None, function='noise'):
     # Multiprocessing code
     ncpus = multiprocessing.cpu_count()
     # p = multiprocessing.Pool(ncpus, init_worker)
-    if use_nCpus is None:
-        use_nCpus = int(ncpus*0.75)
-    print('Using {} of {} cpus'.format(use_nCpus, ncpus))
+    if use_ncpus is None:
+        use_ncpus = int(ncpus*0.75)
+    print('Using {} of {} cpus'.format(use_ncpus, ncpus))
     try:
         if function == 'noise':
-            results_list = parallel_process(mp_ilist, calculate_noise, n_jobs=use_nCpus)
+            results_list = parallel_process(mp_ilist, calculate_noise, n_jobs=use_ncpus)
         elif function == 'gpy_noise':
-            results_list = parallel_process(mp_ilist, calculate_noise_gpy, n_jobs=use_nCpus)
+            results_list = parallel_process(mp_ilist, calculate_noise_gpy, n_jobs=use_ncpus)
         elif function == 'refit_phase_1':
-            results_list = parallel_process(mp_ilist, refit_spectrum_1, n_jobs=use_nCpus)
+            results_list = parallel_process(mp_ilist, refit_spectrum_1, n_jobs=use_ncpus)
         elif function == 'refit_phase_2':
-            results_list = parallel_process(mp_ilist, refit_spectrum_2, n_jobs=use_nCpus)
+            results_list = parallel_process(mp_ilist, refit_spectrum_2, n_jobs=use_ncpus)
         # results_list = p.map(determine_distance, tqdm(ilist))
     except KeyboardInterrupt:
         print("KeyboardInterrupt... quitting.")

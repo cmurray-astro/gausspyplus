@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: plotting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T11:18:08+01:00
+# @Last modified time: 2019-03-04T12:37:22+01:00
 
 import itertools
 import os
@@ -147,10 +147,10 @@ def get_list_indices(data, subcube=False, pixelRange=None,
     return listIndices, nSpectra, grid_layout
 
 
-def get_figure_params(nChannels, nSpectra, cols, rowsize, rowbreak, grid_layout,
-                      subcube=False):
-    if nChannels > 700:
-        colsize = round(rowsize*nChannels/659, 2)
+def get_figure_params(n_channels, nSpectra, cols, rowsize, rowbreak,
+                      grid_layout, subcube=False):
+    if n_channels > 700:
+        colsize = round(rowsize*n_channels/659, 2)
     else:
         colsize = rowsize
 
@@ -240,25 +240,25 @@ def scale_fontsize(rowsize):
 
 
 def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
-                 trainingSet=False, cols=5, rowsize=7.75, rowbreak=50, dpi=50,
+                 training_set=False, cols=5, rowsize=7.75, rowbreak=50, dpi=50,
                  nSpectra=None, suffix='', subcube=False, pixelRange=None,
                  listIndices=None, plotGaussians=True, plotResidual=True, plotSignalRanges=True, random_seed=111):
 
     print("\nMake plots...")
 
     #  check if all necessary files are supplied
-    if (pathToDecompPickle is None) and (trainingSet is False):
-        errorMessage = """'pathToDecompPickle' needs to be specified for 'trainingSet=False'"""
+    if (pathToDecompPickle is None) and (training_set is False):
+        errorMessage = """'pathToDecompPickle' needs to be specified for 'training_set=False'"""
         raise Exception(errorMessage)
 
     fileName, fileExtension = os.path.splitext(os.path.basename(pathToDataPickle))
 
     data = pickle_load_file(pathToDataPickle)
-    if not trainingSet:
+    if not training_set:
         decomp = pickle_load_file(pathToDecompPickle)
 
     channels, figChannels = (data['x_values'] for _ in range(2))
-    nChannels = len(channels)
+    n_channels = len(channels)
     # TODO. check if figChannels[-1] is correct
     figMinChannel, figMaxChannel = figChannels[0], figChannels[-1]
 
@@ -275,7 +275,7 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
         data, subcube=subcube, pixelRange=pixelRange, listIndices=listIndices, nSpectra=nSpectra, random_seed=random_seed)
 
     cols, rows, rowbreak, colsize, multiple_pdfs = get_figure_params(
-        nChannels, nSpectra, cols, rowsize, rowbreak, grid_layout, subcube=subcube)
+        n_channels, nSpectra, cols, rowsize, rowbreak, grid_layout, subcube=subcube)
 
     fontsize = scale_fontsize(rowsize)
 
@@ -313,7 +313,7 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
         y = data['data_list'][idx]
         rms = data['error'][idx][0]
 
-        if trainingSet:
+        if training_set:
             fit_fwhms = data['fwhms'][idx]
             fit_means = data['means'][idx]
             fit_amps = data['amplitudes'][idx]
@@ -342,7 +342,7 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
                     fit_amps[j], fit_fwhms[j], fit_means[j], channels)
                 ax.plot(figChannels, gauss, ls='solid', lw=1, color='orangered')
 
-        if trainingSet:
+        if training_set:
             # TODO: incorporate signal_interval here??
             # rchi2 = goodness_of_fit(y, combined_gauss, rms, nComponents)
             rchi2 = data['best_fit_rchi2'][idx]

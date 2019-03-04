@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: training.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T11:36:07+01:00
+# @Last modified time: 2019-03-04T12:47:54+01:00
 
 import ast
 import configparser
@@ -17,27 +17,27 @@ from gausspyplus.shared_functions import gaussian
 
 
 class GaussPyTraining(object):
-    def __init__(self, pathToTrainingSet, configFile=''):
-        self.pathToTrainingSet = pathToTrainingSet
+    def __init__(self, path_to_training_set, configFile=''):
+        self.path_to_training_set = path_to_training_set
 
-        self.twoPhaseDecomposition = True
+        self.two_phase_decomposition = True
         self.snr = 3.
         self.alpha1_guess = None
         self.alpha2_guess = None
-        self.snrThresh = None
-        self.snr2Thresh = None
+        self.snr_thresh = None
+        self.snr2_thresh = None
 
-        self.createTrainingSet = False
-        self.paramsFromData = True
-        self.nChannels = None
-        self.nSpectra = None
-        self.nCompsLims = None
-        self.ampLims = None
-        self.fwhmLims = None
-        self.meanLims = None
+        self.create_training_set = False
+        self.params_from_data = True
+        self.n_channels = None
+        self.n_spectra = None
+        self.ncomps_limits = None
+        self.amp_limits = None
+        self.fwhm_limits = None
+        self.mean_limits = None
         self.rms = None
-        self.numberRmsSpectra = 5000
-        self.meanEdgeChans = 10
+        self.n_spectra_rms = 5000
+        self.n_edge_channels = 10
 
         self.verbose = True
         self.random_seed = 111
@@ -60,14 +60,14 @@ class GaussPyTraining(object):
                     raise Exception('Could not parse parameter {} from config file'.format(key))
 
     def intitialize(self):
-        self.dirname = os.path.dirname(self.pathToTrainingSet)
-        self.file = os.path.basename(self.pathToTrainingSet)
+        self.dirname = os.path.dirname(self.path_to_training_set)
+        self.file = os.path.basename(self.path_to_training_set)
         self.filename, self.fileExtension = os.path.splitext(self.file)
 
-        if self.snrThresh is None:
-            self.snrThresh = self.snr
-        if self.snr2Thresh is None:
-            self.snr2Thresh = self.snr
+        if self.snr_thresh is None:
+            self.snr_thresh = self.snr
+        if self.snr2_thresh is None:
+            self.snr2_thresh = self.snr
         if self.alpha1_guess is None:
             self.alpha1_guess = 3.
             warnings.warn(
@@ -82,23 +82,23 @@ class GaussPyTraining(object):
     def training(self):
         self.initialize()
 
-        if self.createTrainingSet:
+        if self.create_training_set:
             self.check_settings()
             self.create_training_set()
 
         self.gausspy_train_alpha()
 
     def check_settings(self):
-        if self.nCompsLims is None:
-            errorMessage = str("specify 'nCompsLims' as [minComps, maxComps]")
+        if self.ncomps_limits is None:
+            errorMessage = str("specify 'ncomps_limits' as [minComps, maxComps]")
             raise Exception(errorMessage)
 
-        if self.ampLims is None:
-            errorMessage = str("specify 'ampLims' as [minAmp, maxAmp]")
+        if self.amp_limits is None:
+            errorMessage = str("specify 'amp_limits' as [minAmp, maxAmp]")
             raise Exception(errorMessage)
 
-        if self.meanLims is None:
-            errorMessage = str("specify 'meanLims' in channels as "
+        if self.mean_limits is None:
+            errorMessage = str("specify 'mean_limits' in channels as "
                                "[minMean, maxMean]")
             raise Exception(errorMessage)
 
@@ -106,16 +106,16 @@ class GaussPyTraining(object):
             errorMessage = str("specify 'rms'")
             raise Exception(errorMessage)
 
-        if self.fwhmLims is None:
-            errorMessage = str("specify 'fwhmLims' in channels as "
+        if self.fwhm_limits is None:
+            errorMessage = str("specify 'fwhm_limits' in channels as "
                                "[minFwhm, maxFwhm]")
             raise Exception(errorMessage)
 
-        if self.nChannels is None:
-            errorMessage = str("specify 'nChannels'")
+        if self.n_channels is None:
+            errorMessage = str("specify 'n_channels'")
             raise Exception(errorMessage)
 
-        if self.nSpectra is None:
+        if self.n_spectra is None:
             errorMessage = str("specify 'nSepctra'")
             raise Exception(errorMessage)
 
@@ -134,13 +134,13 @@ class GaussPyTraining(object):
         hdu = fits.open(pathToFile)[0]
         data = hdu.data
 
-        self.nChannels = data.shape[0]
+        self.n_channels = data.shape[0]
 
         yValues = np.arange(data.shape[1])
         xValues = np.arange(data.shape[2])
         locations = list(itertools.product(yValues, xValues))
-        if len(locations) > self.numberRmsSpectra:
-            locations = random.sample(locations, self.numberRmsSpectra)
+        if len(locations) > self.n_spectra_rms:
+            locations = random.sample(locations, self.n_spectra_rms)
         rmsList, maxAmps = ([] for i in range(2))
         for y, x in locations:
             spectrum = data[:, y, x]
@@ -150,37 +150,37 @@ class GaussPyTraining(object):
                 rmsList.append(rms)
 
         self.rms = np.median(rmsList)
-        self.ampLims = [3*self.rms, 0.8*max(maxAmps)]
-        self.meanLims = [0 + self.meanEdgeChans,
-                         data.shape[0] - self.meanEdgeChans]
+        self.amp_limits = [3*self.rms, 0.8*max(maxAmps)]
+        self.mean_limits = [0 + self.n_edge_channels,
+                         data.shape[0] - self.n_edge_channels]
 
         if self.verbose:
-            print("nChannels = {}".format(self.nChannels))
+            print("n_channels = {}".format(self.n_channels))
             print("rms = {}".format(self.rms))
-            print("ampLims = {}".format(self.ampLims))
-            print("meanLims = {}".format(self.meanLims))
+            print("amp_limits = {}".format(self.amp_limits))
+            print("mean_limits = {}".format(self.mean_limits))
 
     def create_training_set(self, training_set=True):
         print('create training set ...')
 
         # Initialize
         data = {}
-        channels = np.arange(self.nChannels)
+        channels = np.arange(self.n_channels)
         error = self.rms
 
         # Begin populating data
-        for i in range(self.nSpectra):
+        for i in range(self.n_spectra):
             amps, fwhms, means = ([] for i in range(3))
-            spectrum = np.random.randn(self.nChannels) * self.rms
+            spectrum = np.random.randn(self.n_channels) * self.rms
 
             ncomps = np.random.choice(
-                np.arange(self.nCompsLims[0], self.nCompsLims[1] + 1))
+                np.arange(self.ncomps_limits[0], self.ncomps_limits[1] + 1))
 
             for comp in range(ncomps):
                 # Select random values for components within specified ranges
-                amp = np.random.uniform(self.ampLims[0], self.ampLims[1])
-                fwhm = np.random.uniform(self.fwhmLims[0], self.fwhmLims[1])
-                mean = np.random.uniform(self.meanLims[0], self.meanLims[1])
+                amp = np.random.uniform(self.amp_limits[0], self.amp_limits[1])
+                fwhm = np.random.uniform(self.fwhm_limits[0], self.fwhm_limits[1])
+                mean = np.random.uniform(self.mean_limits[0], self.mean_limits[1])
 
                 # Add Gaussian with random parameters from above to spectrum
                 spectrum += gaussian(amp, fwhm, mean, channels)
@@ -204,18 +204,18 @@ class GaussPyTraining(object):
         # Dump synthetic data into specified filename
         if not os.path.exists(self.dirname):
             os.makedirs(self.dirname)
-        pickle.dump(data, open(self.pathToTrainingSet, 'wb'))
+        pickle.dump(data, open(self.path_to_training_set, 'wb'))
 
     def gausspy_train_alpha(self):
         from .gausspy_py3 import gp as gp
 
         g = gp.GaussianDecomposer()
 
-        g.load_training_data(self.pathToTrainingSet)
-        g.set('SNR_thresh', self.snrThresh)
-        g.set('SNR2_thresh', self.snr2Thresh)
+        g.load_training_data(self.path_to_training_set)
+        g.set('SNR_thresh', self.snr_thresh)
+        g.set('SNR2_thresh', self.snr2_thresh)
 
-        if self.twoPhaseDecomposition:
+        if self.two_phase_decomposition:
             g.set('phase', 'two')  # Set GaussPy parameters
             # Train AGD starting with initial guess for alpha
             g.train(alpha1_initial=self.alpha1_guess, alpha2_initial=self.alpha2_guess)

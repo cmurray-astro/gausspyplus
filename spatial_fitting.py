@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T11:34:46+01:00
+# @Last modified time: 2019-03-04T12:44:52+01:00
 
 import ast
 import collections
@@ -34,9 +34,9 @@ class SpatialFitting(object):
         self.max_fwhm = None
         self.rchi2_limit = 1.5
         self.rchi2_limit_refit = None
-        self.maxDiffComps = 2
-        self.maxJumpComps = 2
-        self.nMaxJumpComps = 2
+        self.max_diff_comps = 2
+        self.max_jump_comps = 2
+        self.n_max_jump_comps = 2
         self.max_refitting_iteration = 30
 
         self.flag_blended = False
@@ -57,7 +57,7 @@ class SpatialFitting(object):
         self.fwhm_factor_refit = None
         self.broad_neighbor_fraction = 0.5
         self.min_weight = 0.5
-        self.use_nCpus = None
+        self.use_ncpus = None
         self.verbose = True
         self.log_output = True
         self.only_print_flags = False
@@ -94,11 +94,11 @@ class SpatialFitting(object):
             self.shape = (self.header['NAXIS2'], self.header['NAXIS1'])
             self.length = self.header['NAXIS2'] * self.header['NAXIS1']
             self.location = pickledData['location']
-            self.nChannels = self.header['NAXIS3']
+            self.n_channels = self.header['NAXIS3']
         else:
             self.length = len(self.data)
-            self.nChannels = len(self.data[0])
-        self.channels = np.arange(self.nChannels)
+            self.n_channels = len(self.data[0])
+        self.channels = np.arange(self.n_channels)
 
         self.signalRanges = pickledData['signal_ranges']
         self.noiseSpikeRanges = pickledData['noise_spike_ranges']
@@ -125,7 +125,7 @@ class SpatialFitting(object):
                 zip(self.noiseSpikeRanges, self.signalRanges)):
             if signalRanges is not None:
                 self.signal_mask[i] = mask_channels(
-                    self.nChannels, signalRanges,
+                    self.n_channels, signalRanges,
                     remove_intervals=noiseSpikeRanges)
 
         #  starting condition so that refitting iteration can start
@@ -140,7 +140,7 @@ class SpatialFitting(object):
         if self.fwhm_factor_refit is None:
             self.fwhm_factor_refit = self.fwhm_factor
         if self.max_fwhm is None:
-            self.max_fwhm = int(self.nChannels / 2)
+            self.max_fwhm = int(self.n_channels / 2)
 
     # def set_up_logger(self):
     #     #  setting up logger
@@ -338,7 +338,7 @@ class SpatialFitting(object):
             for value in values:
                 if np.isnan(value):
                     continue
-                if np.abs(central_value - value) > self.maxJumpComps:
+                if np.abs(central_value - value) > self.max_jump_comps:
                     counter += 1
             return counter
 
@@ -366,9 +366,9 @@ class SpatialFitting(object):
 
         mask_neighbor = np.zeros(self.length)
         mask_neighbor[~self.nanMask] = np.abs(
-            ncomps_expected[~self.nanMask] - ncomps_1d[~self.nanMask]) > self.maxDiffComps
+            ncomps_expected[~self.nanMask] - ncomps_1d[~self.nanMask]) > self.max_diff_comps
         #  TODO: rework this?
-        mask_neighbor[~self.nanMask] += ncomps_jumps[~self.nanMask] > self.nMaxJumpComps
+        mask_neighbor[~self.nanMask] += ncomps_jumps[~self.nanMask] > self.n_max_jump_comps
         mask_neighbor = mask_neighbor.astype('bool')
         return mask_neighbor, ncomps_expected
 
@@ -535,9 +535,9 @@ class SpatialFitting(object):
         gausspyplus.parallel_processing.init([self.indices_refit, [self]])
 
         if self.phase_two:
-            results_list = gausspyplus.parallel_processing.func(use_nCpus=self.use_nCpus, function='refit_phase_2')
+            results_list = gausspyplus.parallel_processing.func(use_ncpus=self.use_ncpus, function='refit_phase_2')
         else:
-            results_list = gausspyplus.parallel_processing.func(use_nCpus=self.use_nCpus, function='refit_phase_1')
+            results_list = gausspyplus.parallel_processing.func(use_ncpus=self.use_ncpus, function='refit_phase_1')
 
         print('SUCCESS')
 
@@ -1019,13 +1019,13 @@ class SpatialFitting(object):
         #     ncomps_old = self.decomposition['N_components'][index]
         #     ncomps_new = dictResults['N_components']
         #     ncomps_difference_old = max(
-        #         self.maxDiffComps, abs(ncomps_old - ncomps_expected))\
-        #         - self.maxDiffComps
+        #         self.max_diff_comps, abs(ncomps_old - ncomps_expected))\
+        #         - self.max_diff_comps
         #     if ncomps_difference_old > 0:
         #         flag_old = 1
         #     ncomps_difference_new = max(
-        #         self.maxDiffComps, abs(ncomps_new - ncomps_expected))\
-        #         - self.maxDiffComps
+        #         self.max_diff_comps, abs(ncomps_new - ncomps_expected))\
+        #         - self.max_diff_comps
         #     if ncomps_difference_new > 0:
         #         flag_new = 1
         #     if ncomps_difference_new > ncomps_difference_old:
@@ -1106,13 +1106,13 @@ class SpatialFitting(object):
         # ncomps_old = self.decomposition['N_components'][index]
         ncomps_new = dictResults['N_components']
         # ncomps_difference_old = max(
-        #     self.maxDiffComps, abs(ncomps_old - ncomps_expected))\
-        #     - self.maxDiffComps
+        #     self.max_diff_comps, abs(ncomps_old - ncomps_expected))\
+        #     - self.max_diff_comps
         # if ncomps_difference_old > 0:
         #     flag_old = 1
         # ncomps_difference_new = max(
-        #     self.maxDiffComps, abs(ncomps_new - ncomps_expected))\
-        #     - self.maxDiffComps
+        #     self.max_diff_comps, abs(ncomps_new - ncomps_expected))\
+        #     - self.max_diff_comps
         # if ncomps_difference_new > 0:
         #     flag_new = 1
         # if ncomps_difference_new > ncomps_difference_old:
@@ -1120,9 +1120,9 @@ class SpatialFitting(object):
         ncomps_difference_old = abs(ncomps_old - ncomps_expected)
         ncomps_difference_new = abs(ncomps_new - ncomps_expected)
 
-        if ncomps_difference_old > self.maxDiffComps:
+        if ncomps_difference_old > self.max_diff_comps:
             flag_old = 1
-        if ncomps_difference_new > self.maxDiffComps:
+        if ncomps_difference_new > self.max_diff_comps:
             flag_new = flag_old
         if ncomps_difference_new > ncomps_difference_old:
             flag_new += 1
@@ -1375,12 +1375,12 @@ class SpatialFitting(object):
                          noise_spike_ranges, signal_mask, params_only=False,
                          channels=None):
         if channels is None:
-            nChannels = self.nChannels
+            n_channels = self.n_channels
             channels = self.channels
         else:
-            nChannels = len(channels)
+            n_channels = len(channels)
 
-        errors = np.ones(nChannels)*rms
+        errors = np.ones(n_channels)*rms
 
         dct = self.decomposition['improve_fit_settings'].copy()
         dct['max_amp'] = dct['max_amp_factor'] * np.max(spectrum)
@@ -1440,7 +1440,7 @@ class SpatialFitting(object):
             return dictResults
 
         mask = mask_covering_gaussians(
-            means, fwhms, nChannels, remove_intervals=noise_spike_ranges)
+            means, fwhms, n_channels, remove_intervals=noise_spike_ranges)
         rchi2_gauss, aicc_gauss = goodness_of_fit(
             spectrum, best_fit, rms, ncomps, mask=mask, get_aicc=True)
 
