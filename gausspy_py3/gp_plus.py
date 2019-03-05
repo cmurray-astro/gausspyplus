@@ -1,3 +1,9 @@
+# @Author: riener
+# @Date:   2018-12-19T17:30:53+01:00
+# @Filename: gp_plus.py
+# @Last modified by:   riener
+# @Last modified time: 2019-03-05T12:08:20+01:00
+
 import sys
 import numpy as np
 
@@ -7,7 +13,7 @@ from lmfit import Parameters
 
 def say(message, verbose=False):
     """Diagnostic messages."""
-    if verbose == True:
+    if verbose is True:
         print(message)
 
 
@@ -327,7 +333,7 @@ def determine_peaks(spectrum, peak='both', amp_threshold=None):
 
 def check_params_fit(data, params_fit, params_errs, vel, error, max_amp,
                      max_fwhm, snr=3., significance=5., snr_fit=3.,
-                     min_fwhm=None, min_offset=None, signal_ranges=None,
+                     min_fwhm=None, signal_ranges=None,
                      params_min=None, params_max=None):
     ncomps_fit = number_of_components(params_fit)
 
@@ -512,18 +518,18 @@ def get_fully_blended_gaussians(params_fit, get_count=False, criterion=None):
     items = list(range(ncomps_fit))
 
     N_blended = 0
-    for idx1, idx2 in itertools.combinations(items, 2):
-        min1 = offsets_fit[idx1] - abs(fwhms_fit[idx1]) / 2.
-        max1 = offsets_fit[idx1] + abs(fwhms_fit[idx1]) / 2.
-
-        min2 = offsets_fit[idx2] - abs(fwhms_fit[idx2]) / 2.
-        max2 = offsets_fit[idx2] + abs(fwhms_fit[idx2]) / 2.
-
-        if ((min1 > min2) & (max1 < max2)) or ((min2 > min1) & (max2 < max1)):
-            indices_blended = np.append(indices_blended, np.array([idx1, idx2]))
-            if [idx1, idx2] not in blended_pairs:
-                blended_pairs.append([idx1, idx2])
-                N_blended += 1
+    # for idx1, idx2 in itertools.combinations(items, 2):
+    #     min1 = offsets_fit[idx1] - abs(fwhms_fit[idx1]) / 2.
+    #     max1 = offsets_fit[idx1] + abs(fwhms_fit[idx1]) / 2.
+    #
+    #     min2 = offsets_fit[idx2] - abs(fwhms_fit[idx2]) / 2.
+    #     max2 = offsets_fit[idx2] + abs(fwhms_fit[idx2]) / 2.
+    #
+    #     if ((min1 > min2) & (max1 < max2)) or ((min2 > min1) & (max2 < max1)):
+    #         indices_blended = np.append(indices_blended, np.array([idx1, idx2]))
+    #         if [idx1, idx2] not in blended_pairs:
+    #             blended_pairs.append([idx1, idx2])
+    #             N_blended += 1
 
     for idx1, idx2 in itertools.combinations(items, 2):
         min1 = offsets_fit[idx1] - stddevs_fit[idx1]
@@ -535,9 +541,9 @@ def get_fully_blended_gaussians(params_fit, get_count=False, criterion=None):
         if (min1 < offsets_fit[idx2] < max1) or (
                 min2 < offsets_fit[idx1] < max2):
             indices_blended = np.append(indices_blended, np.array([idx1, idx2]))
-            if [idx1, idx2] not in blended_pairs:
-                blended_pairs.append([idx1, idx2])
-                N_blended += 1
+            # if [idx1, idx2] not in blended_pairs:
+            blended_pairs.append([idx1, idx2])
+            N_blended += 1
 
     if get_count:
         return N_blended
@@ -590,7 +596,6 @@ def mask_channels(nChannels, ranges, padChannels=None, remove_intervals=None):
 def get_best_fit(vel, data, errors, params_fit, dct, first=False, plot=False,
                  best_fit_list=None, signal_ranges=None, signal_mask=None,
                  force_accept=False, params_min=None, params_max=None):
-    # TODO: use signal_ranges in check_params_fit??
     # Objective functions for final fit
     def objective_leastsq(paramslm):
         params = vals_vec_from_lmfit(paramslm)
@@ -602,7 +607,7 @@ def get_best_fit(vel, data, errors, params_fit, dct, first=False, plot=False,
 
     ncomps_fit = number_of_components(params_fit)
 
-    # get new best fit
+    #  get new best fit
     lmfit_params = paramvec_to_lmfit(
         params_fit, max_amp=dct['max_amp'], max_fwhm=None,
         params_min=params_min, params_max=params_max)
@@ -612,13 +617,13 @@ def get_best_fit(vel, data, errors, params_fit, dct, first=False, plot=False,
     params_errs = errs_vec_from_lmfit(result.params)
     ncomps_fit = number_of_components(params_fit)
 
+    #  check if fit components satisfy mandatory criteria
     if ncomps_fit > 0:
-        # general check of the fitting criteria
         params_fit, params_errs, ncomps_fit, params_min, params_max = check_params_fit(
             data, params_fit, params_errs, vel, errors[0], dct['max_amp'],
             dct['max_fwhm'], min_fwhm=dct['min_fwhm'], snr=dct['snr'],
             significance=dct['significance'], snr_fit=dct['snr_fit'],
-            signal_ranges=signal_ranges, min_offset=dct['min_offset'])
+            signal_ranges=signal_ranges)
 
         best_fit = func(vel, *params_fit).ravel()
     else:
@@ -629,25 +634,20 @@ def get_best_fit(vel, data, errors, params_fit, dct, first=False, plot=False,
 
     residual = data - best_fit
 
-    # if spatial_fitting:
-    #     return [params_fit, params_errs, ncomps_fit, best_fit, residual, rchi2,
-    #             aicc, params_min, params_max]
-
+    #  return the list of best fit results if there was no old list of best fit results for comparison
     if first:
         new_fit = True
         return [params_fit, params_errs, ncomps_fit, best_fit, residual, rchi2,
                 aicc, new_fit, params_min, params_max]
 
-    # rchi2_old, aicc_old = best_fit_list[5], best_fit_list[6]
-    # rchi2_condition = abs(rchi2 - 1.) < abs(rchi2_old*dct['rchi2_factor'] - 1.)
-    # if (rchi2_condition and (aicc < aicc_old)) or force_accept:
+    #  return new best_fit_list if the AICc value is smaller
     aicc_old = best_fit_list[6]
     if ((aicc < aicc_old) and not np.isclose(aicc, aicc_old, atol=1e-1)) or force_accept:
         new_fit = True
         return [params_fit, params_errs, ncomps_fit, best_fit, residual, rchi2,
                 aicc, new_fit, params_min, params_max]
 
-    #  return old list if fit is not better
+    #  return old best_fit_list if the AICc value is higher
     best_fit_list[7] = False
     return best_fit_list
 
@@ -727,15 +727,32 @@ def try_fit_with_new_components(vel, data, errors, best_fit_list, dct,
                                 baseline_shift_snr=0):
     params_fit = best_fit_list[0]
     ncomps_fit = best_fit_list[2]
+    aicc_old = best_fit_list[6]
     amps_fit, fwhms_fit, offsets_fit = split_params(params_fit, ncomps_fit)
 
+    #  exclude component from parameter list of components
     idx_low_residual = max(
         0, int(offsets_fit[exclude_idx] - fwhms_fit[exclude_idx]/2))
     idx_upp_residual = int(
         offsets_fit[exclude_idx] + fwhms_fit[exclude_idx]/2) + 2
 
-    params_fit = remove_components(params_fit, exclude_idx)
-    ncomps_fit = number_of_components(params_fit)
+    params_fit_new = remove_components(params_fit, exclude_idx)
+
+    #  produce new best fit with excluded components
+    best_fit_list_new = get_best_fit(
+        vel, data, errors, params_fit_new, dct, first=True, plot=False,
+        best_fit_list=best_fit_list, signal_ranges=signal_ranges,
+        signal_mask=signal_mask, force_accept=force_accept)
+
+    #  return new best fit with excluded component if its AICc value is lower
+    aicc = best_fit_list_new[6]
+    if ((aicc < aicc_old) and not np.isclose(aicc, aicc_old, atol=1e-1)):
+        return best_fit_list_new
+
+    #  search for new positive residual peaks
+    params_fit = best_fit_list_new[0]
+    ncomps_fit = best_fit_list_new[2]
+
     amps_fit, fwhms_fit, offsets_fit = split_params(params_fit, ncomps_fit)
 
     residual = data - combined_gaussian(amps_fit, fwhms_fit, offsets_fit, vel)
@@ -746,20 +763,26 @@ def try_fit_with_new_components(vel, data, errors, best_fit_list, dct,
         baseline_shift_snr=baseline_shift_snr)
     offset_guesses = offset_guesses + idx_low_residual
 
-    #  TODO: check if this makes sense
+    #  return original best fit list if there are no guesses for new components to fit in the residual
     if amp_guesses.size == 0:
         return best_fit_list
 
+    #  get new best fit with additional components guessed from the residual
     amps_fit = list(amps_fit) + list(amp_guesses)
     fwhms_fit = list(fwhms_fit) + list(fwhm_guesses)
     offsets_fit = list(offsets_fit) + list(offset_guesses)
 
-    params_fit = amps_fit + fwhms_fit + offsets_fit
+    params_fit_new = amps_fit + fwhms_fit + offsets_fit
 
-    best_fit_list = get_best_fit(
-        vel, data, errors, params_fit, dct, first=False, plot=False,
-        best_fit_list=best_fit_list, signal_ranges=signal_ranges,
+    best_fit_list_new = get_best_fit(
+        vel, data, errors, params_fit_new, dct, first=False, plot=False,
+        best_fit_list=best_fit_list_new, signal_ranges=signal_ranges,
         signal_mask=signal_mask, force_accept=force_accept)
+
+    #  return new best fit if its AICc value is lower
+    aicc = best_fit_list_new[6]
+    if ((aicc < aicc_old) and not np.isclose(aicc, aicc_old, atol=1e-1)):
+        return best_fit_list_new
 
     return best_fit_list
 
