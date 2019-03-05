@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: gp_plus.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-05T12:08:20+01:00
+# @Last modified time: 2019-03-05T12:23:46+01:00
 
 import sys
 import numpy as np
@@ -741,7 +741,7 @@ def try_fit_with_new_components(vel, data, errors, best_fit_list, dct,
     #  produce new best fit with excluded components
     best_fit_list_new = get_best_fit(
         vel, data, errors, params_fit_new, dct, first=True, plot=False,
-        best_fit_list=best_fit_list, signal_ranges=signal_ranges,
+        best_fit_list=None, signal_ranges=signal_ranges,
         signal_mask=signal_mask, force_accept=force_accept)
 
     #  return new best fit with excluded component if its AICc value is lower
@@ -757,11 +757,14 @@ def try_fit_with_new_components(vel, data, errors, best_fit_list, dct,
 
     residual = data - combined_gaussian(amps_fit, fwhms_fit, offsets_fit, vel)
 
+    # amp_guesses, fwhm_guesses, offset_guesses = get_initial_guesses(
+    #     residual[idx_low_residual:idx_upp_residual], errors[0],
+    #     dct['snr'], dct['significance'], peak='positive',
+    #     baseline_shift_snr=baseline_shift_snr)
+    # offset_guesses = offset_guesses + idx_low_residual
     amp_guesses, fwhm_guesses, offset_guesses = get_initial_guesses(
-        residual[idx_low_residual:idx_upp_residual], errors[0],
-        dct['snr'], dct['significance'], peak='positive',
+        residual, errors[0], dct['snr'], dct['significance'], peak='positive',
         baseline_shift_snr=baseline_shift_snr)
-    offset_guesses = offset_guesses + idx_low_residual
 
     #  return original best fit list if there are no guesses for new components to fit in the residual
     if amp_guesses.size == 0:
