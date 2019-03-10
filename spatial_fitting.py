@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-10T20:37:47+01:00
+# @Last modified time: 2019-03-10T21:24:58+01:00
 
 import ast
 import collections
@@ -114,7 +114,7 @@ class SpatialFitting(object):
 
         self.decomposition['refit_iteration'] = [0] * self.nIndices
         self.decomposition['gaussians_rchi2'] = [None] * self.nIndices
-        self.decomposition['gaussians_aic'] = [None] * self.nIndices
+        self.decomposition['gaussians_aicc'] = [None] * self.nIndices
 
         self.neighbor_indices = np.array([None]*self.nIndices)
         self.neighbor_indices_all = np.array([None]*self.nIndices)
@@ -539,8 +539,8 @@ class SpatialFitting(object):
 
         keys = ['amplitudes_fit', 'fwhms_fit', 'means_fit',
                 'amplitudes_fit_err', 'fwhms_fit_err', 'means_fit_err',
-                'best_fit_rchi2', 'best_fit_aic', 'N_components',
-                'gaussians_rchi2', 'gaussians_aic',
+                'best_fit_rchi2', 'best_fit_aicc', 'N_components',
+                'gaussians_rchi2', 'gaussians_aicc',
                 'N_negative_residuals', 'N_blended']
 
         count_selected, count_refitted = 0, 0
@@ -1173,21 +1173,21 @@ class SpatialFitting(object):
         if n_flags_new > n_flags_old:
             return False
 
-        aic_old = self.get_dictionary_value(
-            'best_fit_aic', index, dct_new_fit=dct_new_fit)
-        aic_new = dictResults['best_fit_aic']
+        aicc_old = self.get_dictionary_value(
+            'best_fit_aicc', index, dct_new_fit=dct_new_fit)
+        aicc_new = dictResults['best_fit_aicc']
         residual_signal_mask = self.get_dictionary_value(
             'residual_signal_mask', index, dct_new_fit=dct_new_fit)
 
-        # if (aic_new > aic_old) and (n_flags_new == n_flags_old):
+        # if (aicc_new > aicc_old) and (n_flags_new == n_flags_old):
         #     return False
-        if (aic_new > aic_old):
+        if (aicc_new > aicc_old):
             statistic, pvalue = normaltest(residual_signal_mask)
             if pvalue < self.min_pvalue:
                 return False
 
         # if index == 2850:
-        #     print('aic:', aic_old, aic_new)
+        #     print('aicc:', aicc_old, aicc_new)
 
         return True
 
@@ -1387,7 +1387,7 @@ class SpatialFitting(object):
         best_fit = best_fit_list[3]
         residual_signal_mask = best_fit_list[4][signal_mask]
         rchi2 = best_fit_list[5]
-        aic = best_fit_list[6]
+        aicc = best_fit_list[6]
 
         if ncomps == 0:
             return None
@@ -1405,18 +1405,18 @@ class SpatialFitting(object):
 
         mask = mask_covering_gaussians(
             means, fwhms, n_channels, remove_intervals=noise_spike_ranges)
-        rchi2_gauss, aic_gauss = goodness_of_fit(
-            spectrum, best_fit, rms, ncomps, mask=mask, get_aic=True)
+        rchi2_gauss, aicc_gauss = goodness_of_fit(
+            spectrum, best_fit, rms, ncomps, mask=mask, get_aicc=True)
 
         N_blended = get_fully_blended_gaussians(params, get_count=True)
         N_negative_residuals = check_for_negative_residual(
             channels, spectrum, rms, best_fit_list, dct, get_count=True)
 
-        keys = ["best_fit_rchi2", "best_fit_aic", "residual_signal_mask",
-                "gaussians_rchi2", "gaussians_aic",
+        keys = ["best_fit_rchi2", "best_fit_aicc", "residual_signal_mask",
+                "gaussians_rchi2", "gaussians_aicc",
                 "N_components", "N_blended", "N_negative_residuals"]
-        values = [rchi2, aic, residual_signal_mask,
-                  rchi2_gauss, aic_gauss,
+        values = [rchi2, aicc, residual_signal_mask,
+                  rchi2_gauss, aicc_gauss,
                   ncomps, N_blended, N_negative_residuals]
         for key, val in zip(keys, values):
             dictResults[key] = val

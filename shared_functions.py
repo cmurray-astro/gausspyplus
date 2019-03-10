@@ -2,12 +2,10 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: shared_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-06T16:23:17+01:00
+# @Last modified time: 2019-03-10T21:25:31+01:00
 
 import numpy as np
 import warnings
-
-from astropy.stats import akaike_info_criterion_lsq
 
 
 def determine_significance(amp, fwhm, rms):
@@ -58,8 +56,8 @@ def combined_gaussian(amps, fwhms, means, x):
     return combined_gauss
 
 
-# def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aic=False):
-#     """Determine the goodness of fit (reduced chi2, AIC).
+# def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aicc=False):
+#     """Determine the goodness of fit (reduced chi2, AICc).
 #
 #     Parameters
 #     ----------
@@ -73,16 +71,16 @@ def combined_gaussian(amps, fwhms, means, x):
 #         Number of Gaussian components used for the fit.
 #     mask : type
 #         Mask specifying which regions of the spectrum should be used.
-#     get_aic : type
-#         If set to `True`, the AIC value will be returned in addition to the
+#     get_aicc : type
+#         If set to `True`, the AICc value will be returned in addition to the
 #         reduced chi2 value.
 #
 #     Returns
 #     -------
 #     rchi2 : float
 #         Reduced chi2 value.
-#     aic : float
-#         (optional). AIC value is returned if get_aic is set to `True`.
+#     aicc : float
+#         (optional). AICc value is returned if get_aicc is set to `True`.
 #
 #     """
 #     if type(errors) is not np.ndarray:
@@ -101,14 +99,14 @@ def combined_gaussian(amps, fwhms, means, x):
 #     k = 3*ncomps_fit  # degrees of freedom
 #     N = len(data[mask])
 #     rchi2 = chi2 / (N - k)
-#     if get_aic:
-#         aic = chi2 + 2*k + (2*k**2 + 2*k) / (N - k - 1)
-#         return rchi2, aic
+#     if get_aicc:
+#         aicc = chi2 + 2*k + (2*k**2 + 2*k) / (N - k - 1)
+#         return rchi2, aicc
 #     return rchi2
 
 
-def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aic=False):
-    """Determine the goodness of fit (reduced chi2, AIC).
+def goodness_of_fit_newer(data, best_fit_final, errors, ncomps_fit, mask=None, get_aicc=False):
+    """Determine the goodness of fit (reduced chi2, AICc).
 
     Parameters
     ----------
@@ -122,16 +120,16 @@ def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aic
         Number of Gaussian components used for the fit.
     mask : type
         Mask specifying which regions of the spectrum should be used.
-    get_aic : type
-        If set to `True`, the AIC value will be returned in addition to the
+    get_aicc : type
+        If set to `True`, the AICc value will be returned in addition to the
         reduced chi2 value.
 
     Returns
     -------
     rchi2 : float
         Reduced chi2 value.
-    aic : float
-        (optional). AIC value is returned if get_aic is set to `True`.
+    aicc : float
+        (optional). AICc value is returned if get_aicc is set to `True`.
 
     """
     if type(errors) is not np.ndarray:
@@ -152,11 +150,14 @@ def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aic
     n_params = 3*ncomps_fit  # degrees of freedom
     n_samples = len(data[mask])
     rchi2 = chi2 / (n_samples - n_params)
-    if get_aic:
+    if get_aicc:
         #  sum of squared residuals
         ssr = np.sum(squared_residuals)
-        aic = akaike_info_criterion_lsq(ssr, n_params, n_samples)
-        return rchi2, aic
+        log_likelihood = -0.5 * n_samples * np.log(ssr / n_samples)
+        aicc = (2.0 * (n_params - log_likelihood) +
+               2.0 * n_params * (n_params + 1.0) /
+               (n_samples - n_params - 1.0))
+        return rchi2, aicc
     return rchi2
 
 

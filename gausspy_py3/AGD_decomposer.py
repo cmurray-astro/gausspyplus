@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: AGD_decomposer.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-06T16:21:57+01:00
+# @Last modified time: 2019-03-10T21:22:26+01:00
 
 #!/usr/bin/python
 # Robert Lindner
@@ -449,7 +449,7 @@ def AGD(vel, data, errors, idx=None, signal_ranges=None,
             signal_ranges=signal_ranges, noise_spike_ranges=noise_spike_ranges)
 
         params_fit, params_errs, ncomps_fit, best_fit_final, residual,\
-            rchi2, aic, new_fit, params_min, params_max = best_fit_list
+            rchi2, aicc, new_fit, params_min, params_max = best_fit_list
 
         ncomps_gf = ncomps_fit
 
@@ -545,7 +545,7 @@ def AGD(vel, data, errors, idx=None, signal_ranges=None,
     odict['index'] = idx
     if dct['improve_fitting']:
         odict['rchi2'] = rchi2
-        odict['aic'] = aic
+        odict['aicc'] = aicc
 
         odict['N_negative_residuals'] = N_negative_residuals
         odict['N_blended'] = N_blended

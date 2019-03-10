@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: gp.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-06T16:21:45+01:00
+# @Last modified time: 2019-03-10T21:22:12+01:00
 
 import os
 import pickle
@@ -130,7 +130,7 @@ class GaussianDecomposer(object):
         new_keys = ['index_fit', 'amplitudes_fit', 'fwhms_fit', 'means_fit',
                     'index_initial', 'amplitudes_initial', 'fwhms_initial', 'means_initial',
                     'amplitudes_fit_err', 'fwhms_fit_err', 'means_fit_err', 'best_fit_rchi2',
-                    'best_fit_aic', 'N_components', 'N_negative_residuals', 'N_blended', 'log_gplus']
+                    'best_fit_aicc', 'N_components', 'N_negative_residuals', 'N_blended', 'log_gplus']
 
         output_data = dict((key, []) for key in new_keys)
         # import pickle
@@ -181,13 +181,13 @@ class GaussianDecomposer(object):
 
                 # Final goodness of fit criteria
                 rchi2 = result['rchi2'] if 'rchi2' in result else None
-                aic = result['aic'] if 'aic' in result else None
+                aicc = result['aicc'] if 'aicc' in result else None
                 Nresidual = result['N_negative_residuals'] if 'N_negative_residuals' in result else None
                 Nblended = result['N_blended'] if 'N_blended' in result else None
                 log_gplus = result['log_gplus'] if 'log_gplus' in result else None
 
                 output_data['best_fit_rchi2'].append(rchi2)
-                output_data['best_fit_aic'].append(aic)
+                output_data['best_fit_aicc'].append(aicc)
                 output_data['N_negative_residuals'].append(Nresidual)
                 output_data['N_blended'].append(Nblended)
                 output_data['log_gplus'].append(log_gplus)

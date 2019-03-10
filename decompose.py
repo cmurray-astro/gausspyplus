@@ -2,7 +2,7 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-06T16:22:09+01:00
+# @Last modified time: 2019-03-10T21:22:53+01:00
 
 from __future__ import print_function
 
@@ -347,7 +347,7 @@ class GaussPyDecompose(object):
 
         dct_final_guesses = {}
 
-        for key in ["index_fit", "best_fit_rchi2", "best_fit_aic",
+        for key in ["index_fit", "best_fit_rchi2", "best_fit_aicc",
                     "amplitudes_fit", "amplitudes_fit_err", "fwhms_fit",
                     "fwhms_fit_err", "means_fit", "means_fit_err", "log_gplus",
                     "N_negative_residuals", "N_blended", "N_components"]:
