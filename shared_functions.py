@@ -2,10 +2,12 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: shared_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:37:59+01:00
+# @Last modified time: 2019-03-06T16:23:17+01:00
 
 import numpy as np
 import warnings
+
+from astropy.stats import akaike_info_criterion_lsq
 
 
 def determine_significance(amp, fwhm, rms):
@@ -56,8 +58,57 @@ def combined_gaussian(amps, fwhms, means, x):
     return combined_gauss
 
 
-def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aicc=False):
-    """Determine the goodness of fit (reduced chi2, AICc).
+# def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aic=False):
+#     """Determine the goodness of fit (reduced chi2, AIC).
+#
+#     Parameters
+#     ----------
+#     data : list
+#         Original data.
+#     best_fit_final : list
+#         Fit to the original data.
+#     errors : list
+#         Root-mean-square noise for each channel.
+#     ncomps_fit : int
+#         Number of Gaussian components used for the fit.
+#     mask : type
+#         Mask specifying which regions of the spectrum should be used.
+#     get_aic : type
+#         If set to `True`, the AIC value will be returned in addition to the
+#         reduced chi2 value.
+#
+#     Returns
+#     -------
+#     rchi2 : float
+#         Reduced chi2 value.
+#     aic : float
+#         (optional). AIC value is returned if get_aic is set to `True`.
+#
+#     """
+#     if type(errors) is not np.ndarray:
+#         errors = np.ones(len(data)) * errors
+#     # TODO: check if mask is set to None everywehere there is no mask
+#     if mask is None:
+#         mask = np.ones(len(data))
+#         mask = mask.astype('bool')
+#     elif len(mask) == 0:
+#         mask = np.ones(len(data))
+#         mask = mask.astype('bool')
+#     elif np.count_nonzero(mask) == 0:
+#         mask = np.ones(len(data))
+#         mask = mask.astype('bool')
+#     chi2 = np.sum((data[mask] - best_fit_final[mask])**2 / errors[mask]**2)
+#     k = 3*ncomps_fit  # degrees of freedom
+#     N = len(data[mask])
+#     rchi2 = chi2 / (N - k)
+#     if get_aic:
+#         aic = chi2 + 2*k + (2*k**2 + 2*k) / (N - k - 1)
+#         return rchi2, aic
+#     return rchi2
+
+
+def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aic=False):
+    """Determine the goodness of fit (reduced chi2, AIC).
 
     Parameters
     ----------
@@ -71,16 +122,16 @@ def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aic
         Number of Gaussian components used for the fit.
     mask : type
         Mask specifying which regions of the spectrum should be used.
-    get_aicc : type
-        If set to `True`, the AICc value will be returned in addition to the
+    get_aic : type
+        If set to `True`, the AIC value will be returned in addition to the
         reduced chi2 value.
 
     Returns
     -------
     rchi2 : float
         Reduced chi2 value.
-    aicc : float
-        (optional). AICc value is returned if get_aicc is set to `True`.
+    aic : float
+        (optional). AIC value is returned if get_aic is set to `True`.
 
     """
     if type(errors) is not np.ndarray:
@@ -95,13 +146,17 @@ def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aic
     elif np.count_nonzero(mask) == 0:
         mask = np.ones(len(data))
         mask = mask.astype('bool')
-    chi2 = np.sum((data[mask] - best_fit_final[mask])**2 / errors[mask]**2)
-    k = 3*ncomps_fit  # degrees of freedom
-    N = len(data[mask])
-    rchi2 = chi2 / (N - k)
-    if get_aicc:
-        aicc = chi2 + 2*k + (2*k**2 + 2*k) / (N - k - 1)
-        return rchi2, aicc
+
+    squared_residuals = (data[mask] - best_fit_final[mask])**2
+    chi2 = np.sum(squared_residuals / errors[mask]**2)
+    n_params = 3*ncomps_fit  # degrees of freedom
+    n_samples = len(data[mask])
+    rchi2 = chi2 / (n_samples - n_params)
+    if get_aic:
+        #  sum of squared residuals
+        ssr = np.sum(squared_residuals)
+        aic = akaike_info_criterion_lsq(ssr, n_params, n_samples)
+        return rchi2, aic
     return rchi2
 
 

@@ -2,11 +2,12 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: gp_plus.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-05T12:23:46+01:00
+# @Last modified time: 2019-03-06T16:23:57+01:00
 
 import sys
 import numpy as np
 
+from astropy.stats import akaike_info_criterion_lsq
 from lmfit import minimize as lmfit_minimize
 from lmfit import Parameters
 
@@ -136,9 +137,64 @@ def determine_significance(amp, fwhm, rms):
     return amp * np.sqrt(fwhm) * 0.75269184778925247 / rms
 
 
-def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None,
-                    get_aicc=False):
-    """Determine the goodness of fit (reduced chi2, AICc).
+# def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None,
+#                     get_aic=False):
+#     """Determine the goodness of fit (reduced chi2, AIC).
+#
+#     Parameters
+#     ----------
+#     data : list
+#         Original data.
+#     best_fit_final : list
+#         Fit to the original data.
+#     errors : list
+#         Root-mean-square noise for each channel.
+#     ncomps_fit : int
+#         Number of Gaussian components used for the fit.
+#     mask : type
+#         Mask specifying which regions of the spectrum should be used.
+#     get_aic : type
+#         If set to `True`, the AIC value will be returned in addition to the
+#         reduced chi2 value.
+#
+#     Returns
+#     -------
+#     rchi2 : float
+#         Reduced chi2 value.
+#     aic : float
+#         (optional). AIC value is returned if get_aic is set to `True`.
+#
+#     """
+#     #  create array if single rms value was supplied
+#     if type(errors) is not np.ndarray:
+#         errors = np.ones(len(data)) * errors
+#
+#     #  use the whole spectrum if no mask was supplied
+#     # TODO: check if mask is set to None everywehere there is no mask
+#     if mask is None:
+#         mask = np.ones(len(data))
+#         mask = mask.astype('bool')
+#     elif len(mask) == 0:
+#         mask = np.ones(len(data))
+#         mask = mask.astype('bool')
+#     elif np.count_nonzero(mask) == 0:
+#         mask = np.ones(len(data))
+#         mask = mask.astype('bool')
+#
+#     chi2 = np.sum((data[mask] - best_fit_final[mask])**2 / errors[mask]**2)
+#     k = 3*ncomps_fit  # degrees of freedom
+#     N = len(data[mask])
+#     rchi2 = chi2 / (N - k)
+#
+#     #  corrected Akaike information criterion
+#     if get_aic:
+#         aic = chi2 + 2*k + (2*k**2 + 2*k) / (N - k - 1)
+#         return rchi2, aic
+#     return rchi2
+
+
+def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aic=False):
+    """Determine the goodness of fit (reduced chi2, AIC).
 
     Parameters
     ----------
@@ -152,23 +208,20 @@ def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None,
         Number of Gaussian components used for the fit.
     mask : type
         Mask specifying which regions of the spectrum should be used.
-    get_aicc : type
-        If set to `True`, the AICc value will be returned in addition to the
+    get_aic : type
+        If set to `True`, the AIC value will be returned in addition to the
         reduced chi2 value.
 
     Returns
     -------
     rchi2 : float
         Reduced chi2 value.
-    aicc : float
-        (optional). AICc value is returned if get_aicc is set to `True`.
+    aic : float
+        (optional). AIC value is returned if get_aic is set to `True`.
 
     """
-    #  create array if single rms value was supplied
     if type(errors) is not np.ndarray:
         errors = np.ones(len(data)) * errors
-
-    #  use the whole spectrum if no mask was supplied
     # TODO: check if mask is set to None everywehere there is no mask
     if mask is None:
         mask = np.ones(len(data))
@@ -180,15 +233,16 @@ def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None,
         mask = np.ones(len(data))
         mask = mask.astype('bool')
 
-    chi2 = np.sum((data[mask] - best_fit_final[mask])**2 / errors[mask]**2)
-    k = 3*ncomps_fit  # degrees of freedom
-    N = len(data[mask])
-    rchi2 = chi2 / (N - k)
-
-    #  corrected Akaike information criterion
-    if get_aicc:
-        aicc = chi2 + 2*k + (2*k**2 + 2*k) / (N - k - 1)
-        return rchi2, aicc
+    squared_residuals = (data[mask] - best_fit_final[mask])**2
+    chi2 = np.sum(squared_residuals / errors[mask]**2)
+    n_params = 3*ncomps_fit  # degrees of freedom
+    n_samples = len(data[mask])
+    rchi2 = chi2 / (n_samples - n_params)
+    if get_aic:
+        #  sum of squared residuals
+        ssr = np.sum(squared_residuals)
+        aic = akaike_info_criterion_lsq(ssr, n_params, n_samples)
+        return rchi2, aic
     return rchi2
 
 
@@ -518,18 +572,6 @@ def get_fully_blended_gaussians(params_fit, get_count=False, criterion=None):
     items = list(range(ncomps_fit))
 
     N_blended = 0
-    # for idx1, idx2 in itertools.combinations(items, 2):
-    #     min1 = offsets_fit[idx1] - abs(fwhms_fit[idx1]) / 2.
-    #     max1 = offsets_fit[idx1] + abs(fwhms_fit[idx1]) / 2.
-    #
-    #     min2 = offsets_fit[idx2] - abs(fwhms_fit[idx2]) / 2.
-    #     max2 = offsets_fit[idx2] + abs(fwhms_fit[idx2]) / 2.
-    #
-    #     if ((min1 > min2) & (max1 < max2)) or ((min2 > min1) & (max2 < max1)):
-    #         indices_blended = np.append(indices_blended, np.array([idx1, idx2]))
-    #         if [idx1, idx2] not in blended_pairs:
-    #             blended_pairs.append([idx1, idx2])
-    #             N_blended += 1
 
     for idx1, idx2 in itertools.combinations(items, 2):
         min1 = offsets_fit[idx1] - stddevs_fit[idx1]
@@ -541,7 +583,6 @@ def get_fully_blended_gaussians(params_fit, get_count=False, criterion=None):
         if (min1 < offsets_fit[idx2] < max1) or (
                 min2 < offsets_fit[idx1] < max2):
             indices_blended = np.append(indices_blended, np.array([idx1, idx2]))
-            # if [idx1, idx2] not in blended_pairs:
             blended_pairs.append([idx1, idx2])
             N_blended += 1
 
@@ -549,8 +590,10 @@ def get_fully_blended_gaussians(params_fit, get_count=False, criterion=None):
         return N_blended
 
     indices_blended = np.unique(indices_blended).astype('int')
+    #  sort the identified blended components from lowest to highest amplitude value
+    sort = np.argsort(np.array(amps_fit)[indices_blended])
 
-    return indices_blended
+    return indices_blended[sort]
 
 
 def remove_components(params_fit, remove_indices):
@@ -629,8 +672,8 @@ def get_best_fit(vel, data, errors, params_fit, dct, first=False, plot=False,
     else:
         best_fit = data * 0
 
-    rchi2, aicc = goodness_of_fit(
-        data, best_fit, errors, ncomps_fit, mask=signal_mask, get_aicc=True)
+    rchi2, aic = goodness_of_fit(
+        data, best_fit, errors, ncomps_fit, mask=signal_mask, get_aic=True)
 
     residual = data - best_fit
 
@@ -638,16 +681,16 @@ def get_best_fit(vel, data, errors, params_fit, dct, first=False, plot=False,
     if first:
         new_fit = True
         return [params_fit, params_errs, ncomps_fit, best_fit, residual, rchi2,
-                aicc, new_fit, params_min, params_max]
+                aic, new_fit, params_min, params_max]
 
-    #  return new best_fit_list if the AICc value is smaller
-    aicc_old = best_fit_list[6]
-    if ((aicc < aicc_old) and not np.isclose(aicc, aicc_old, atol=1e-1)) or force_accept:
+    #  return new best_fit_list if the AIC value is smaller
+    aic_old = best_fit_list[6]
+    if ((aic < aic_old) and not np.isclose(aic, aic_old, atol=1e-1)) or force_accept:
         new_fit = True
         return [params_fit, params_errs, ncomps_fit, best_fit, residual, rchi2,
-                aicc, new_fit, params_min, params_max]
+                aic, new_fit, params_min, params_max]
 
-    #  return old best_fit_list if the AICc value is higher
+    #  return old best_fit_list if the AIC value is higher
     best_fit_list[7] = False
     return best_fit_list
 
@@ -727,7 +770,7 @@ def try_fit_with_new_components(vel, data, errors, best_fit_list, dct,
                                 baseline_shift_snr=0):
     params_fit = best_fit_list[0]
     ncomps_fit = best_fit_list[2]
-    aicc_old = best_fit_list[6]
+    aic_old = best_fit_list[6]
     amps_fit, fwhms_fit, offsets_fit = split_params(params_fit, ncomps_fit)
 
     #  exclude component from parameter list of components
@@ -744,9 +787,9 @@ def try_fit_with_new_components(vel, data, errors, best_fit_list, dct,
         best_fit_list=None, signal_ranges=signal_ranges,
         signal_mask=signal_mask, force_accept=force_accept)
 
-    #  return new best fit with excluded component if its AICc value is lower
-    aicc = best_fit_list_new[6]
-    if ((aicc < aicc_old) and not np.isclose(aicc, aicc_old, atol=1e-1)):
+    #  return new best fit with excluded component if its AIC value is lower
+    aic = best_fit_list_new[6]
+    if ((aic < aic_old) and not np.isclose(aic, aic_old, atol=1e-1)):
         return best_fit_list_new
 
     #  search for new positive residual peaks
@@ -782,9 +825,9 @@ def try_fit_with_new_components(vel, data, errors, best_fit_list, dct,
         best_fit_list=best_fit_list_new, signal_ranges=signal_ranges,
         signal_mask=signal_mask, force_accept=force_accept)
 
-    #  return new best fit if its AICc value is lower
-    aicc = best_fit_list_new[6]
-    if ((aicc < aicc_old) and not np.isclose(aicc, aicc_old, atol=1e-1)):
+    #  return new best fit if its AIC value is lower
+    aic = best_fit_list_new[6]
+    if ((aic < aic_old) and not np.isclose(aic, aic_old, atol=1e-1)):
         return best_fit_list_new
 
     return best_fit_list
@@ -894,10 +937,10 @@ def quality_check(vel, data, errors, params_fit, ncomps_fit, dct,
         residual = data
         params_fit, params_errs = [], []
 
-        rchi2, aicc = goodness_of_fit(
-            data, best_fit_final, errors, ncomps_fit, mask=signal_mask, get_aicc=True)
+        rchi2, aic = goodness_of_fit(
+            data, best_fit_final, errors, ncomps_fit, mask=signal_mask, get_aic=True)
 
-        best_fit_list = [params_fit, params_errs, ncomps_fit, best_fit_final, residual, rchi2, aicc, new_fit, params_min, params_max]
+        best_fit_list = [params_fit, params_errs, ncomps_fit, best_fit_final, residual, rchi2, aic, new_fit, params_min, params_max]
         # N_flags = 0
         #
         # return best_fit_list, N_flags
@@ -995,7 +1038,7 @@ def try_to_improve_fitting(vel, data, errors, params_fit, ncomps_fit, dct,
     #     signal_ranges=signal_ranges, signal_mask=signal_mask)
 
     params_fit, params_errs, ncomps_fit, best_fit_final, residual,\
-        rchi2, aicc, new_fit, params_min, params_max = best_fit_list
+        rchi2, aic, new_fit, params_min, params_max = best_fit_list
 
     # Try to improve fit by searching for peaks in the residual
     # ---------------------------------------------------------

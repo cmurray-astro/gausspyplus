@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:38:32+01:00
+# @Last modified time: 2019-03-07T10:20:00+01:00
 
 import getpass
 import itertools
@@ -12,8 +12,9 @@ import warnings
 
 import numpy as np
 
-from astropy.io import fits
 from astropy import units as u
+from astropy.io import fits
+from astropy.stats import median_absolute_deviation
 from astropy.wcs import WCS
 from datetime import datetime
 from tqdm import tqdm
@@ -420,7 +421,8 @@ def calculate_average_rms_noise(data, numberRmsSpectra, random_seed=111,
             break
 
     pbar.close()
-    return np.nanmedian(rmsList)
+    return np.nanmean(rmsList), np.nanstd(rmsList)
+    # return np.nanmedian(rmsList), median_absolute_deviation(rmsList, ignore_nan=True)
 
 
 def get_path_to_output_file(pathToInputFile, suffix='_',

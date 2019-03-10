@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T14:05:06+01:00
+# @Last modified time: 2019-03-10T20:37:47+01:00
 
 import ast
 import collections
@@ -13,6 +13,7 @@ import os
 import pickle
 
 from astropy import units as u
+from scipy.stats import normaltest
 from tqdm import tqdm
 
 from networkx.algorithms.components.connected import connected_components
@@ -57,6 +58,7 @@ class SpatialFitting(object):
         self.fwhm_factor_refit = None
         self.broad_neighbor_fraction = 0.5
         self.min_weight = 0.5
+        self.min_pvalue = 0.01
         self.use_ncpus = None
         self.verbose = True
         self.log_output = True
@@ -112,7 +114,7 @@ class SpatialFitting(object):
 
         self.decomposition['refit_iteration'] = [0] * self.nIndices
         self.decomposition['gaussians_rchi2'] = [None] * self.nIndices
-        self.decomposition['gaussians_aicc'] = [None] * self.nIndices
+        self.decomposition['gaussians_aic'] = [None] * self.nIndices
 
         self.neighbor_indices = np.array([None]*self.nIndices)
         self.neighbor_indices_all = np.array([None]*self.nIndices)
@@ -144,37 +146,10 @@ class SpatialFitting(object):
         if self.max_fwhm is None:
             self.max_fwhm = int(self.n_channels / 2)
 
-    # def set_up_logger(self):
-    #     #  setting up logger
-    #     now = datetime.datetime.now()
-    #     date_string = "{}{}{}-{}{}{}".format(
-    #         now.year,
-    #         str(now.month).zfill(2),
-    #         str(now.day).zfill(2),
-    #         str(now.hour).zfill(2),
-    #         str(now.minute).zfill(2),
-    #         str(now.second).zfill(2))
-    #
-    #     dirname = os.path.join(self.parentDirname, 'gpy_log')
-    #     if not os.path.exists(dirname):
-    #         os.makedirs(dirname)
-    #     filename = os.path.splitext(os.path.basename(self.finFilename))[0]
-    #
-    #     logname = os.path.join(dirname, '{}_{}.log'.format(
-    #         date_string, filename))
-    #     logging.basicConfig(filename=logname,
-    #                         filemode='a',
-    #                         format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-    #                         datefmt='%H:%M:%S',
-    #                         level=logging.DEBUG)
-    #
-    #     self.logger = logging.getLogger(__name__)
-
     def getting_ready(self):
         if self.log_output:
             self.logger = set_up_logger(
                 self.parentDirname, self.filename, method='g+_spatial_refitting')
-            # self.set_up_logger()
 
         phase = 1
         if self.phase_two:
@@ -320,29 +295,42 @@ class SpatialFitting(object):
 
         return mask_broad
 
+    def number_of_component_jumps(self, values):
+        central_value = values[4]
+        if np.isnan(central_value):
+            return 0
+        values = np.delete(values, 4)
+        counter = 0
+        for value in values:
+            if np.isnan(value):
+                continue
+            if np.abs(central_value - value) > self.max_jump_comps:
+                counter += 1
+        return counter
+
     def define_mask_neighbor_ncomps(self, nanmask_1d, flag):
         import scipy.ndimage as ndimage
 
-        def expected_components(values):
-            values = np.delete(values, 4)
-            denominator = np.count_nonzero(~np.isnan(values))
-            if denominator > 0:
-                return np.int(np.round(np.nansum(values) / denominator))
-            else:
-                return np.int(0)
-
-        def number_of_component_jumps(values):
-            central_value = values[4]
-            if np.isnan(central_value):
-                return 0
-            values = np.delete(values, 4)
-            counter = 0
-            for value in values:
-                if np.isnan(value):
-                    continue
-                if np.abs(central_value - value) > self.max_jump_comps:
-                    counter += 1
-            return counter
+        # def expected_components(values):
+        #     values = np.delete(values, 4)
+        #     denominator = np.count_nonzero(~np.isnan(values))
+        #     if denominator > 0:
+        #         return np.int(np.round(np.nansum(values) / denominator))
+        #     else:
+        #         return np.int(0)
+        #
+        # def number_of_component_jumps(values):
+        #     central_value = values[4]
+        #     if np.isnan(central_value):
+        #         return 0
+        #     values = np.delete(values, 4)
+        #     counter = 0
+        #     for value in values:
+        #         if np.isnan(value):
+        #             continue
+        #         if np.abs(central_value - value) > self.max_jump_comps:
+        #             counter += 1
+        #     return counter
 
         if not flag:
             return np.zeros(self.length).astype('bool'), False
@@ -358,21 +346,24 @@ class SpatialFitting(object):
 
         footprint = np.ones((3, 3))
 
-        ncomps_expected = ndimage.generic_filter(
-            ncomps_2d, expected_components, footprint=footprint,
-            mode='reflect').flatten()
+        # ncomps_expected = ndimage.generic_filter(
+        #     ncomps_2d, expected_components, footprint=footprint,
+        #     mode='reflect').flatten()
 
         ncomps_jumps = ndimage.generic_filter(
-            ncomps_2d, number_of_component_jumps, footprint=footprint,
+            ncomps_2d, self.number_of_component_jumps, footprint=footprint,
             mode='reflect').flatten()
 
         mask_neighbor = np.zeros(self.length)
-        mask_neighbor[~self.nanMask] = np.abs(
-            ncomps_expected[~self.nanMask] - ncomps_1d[~self.nanMask]) > self.max_diff_comps
-        #  TODO: rework this?
-        mask_neighbor[~self.nanMask] += ncomps_jumps[~self.nanMask] > self.n_max_jump_comps
+        # mask_neighbor[~self.nanMask] = np.abs(
+        #     ncomps_expected[~self.nanMask] - ncomps_1d[~self.nanMask]) > self.max_diff_comps
+        # #  TODO: rework this?
+        # mask_neighbor[~self.nanMask] += ncomps_jumps[~self.nanMask] > self.n_max_jump_comps
+
+        mask_neighbor[~self.nanMask] = ncomps_jumps[~self.nanMask] > self.n_max_jump_comps
         mask_neighbor = mask_neighbor.astype('bool')
-        return mask_neighbor, ncomps_expected
+        # return mask_neighbor, ncomps_expected
+        return mask_neighbor, ncomps_jumps, ncomps_2d
 
     def determine_spectra_for_flagging(self):
         self.mask_blended = self.define_mask(
@@ -389,7 +380,8 @@ class SpatialFitting(object):
         mask_flagged = self.mask_blended + self.mask_residual\
             + self.mask_broad_flagged + self.mask_rchi2_flagged
 
-        self.mask_ncomps, self.ncomps_expected =\
+        # self.mask_ncomps, self.ncomps_expected =\
+        self.mask_ncomps, self.ncomps_jumps, self.ncomps_2d =\
             self.define_mask_neighbor_ncomps(
                 mask_flagged.copy(), self.flag_ncomps)
 
@@ -547,8 +539,8 @@ class SpatialFitting(object):
 
         keys = ['amplitudes_fit', 'fwhms_fit', 'means_fit',
                 'amplitudes_fit_err', 'fwhms_fit_err', 'means_fit_err',
-                'best_fit_rchi2', 'best_fit_aicc', 'N_components',
-                'gaussians_rchi2', 'gaussians_aicc',
+                'best_fit_rchi2', 'best_fit_aic', 'N_components',
+                'gaussians_rchi2', 'gaussians_aic',
                 'N_negative_residuals', 'N_blended']
 
         count_selected, count_refitted = 0, 0
@@ -972,10 +964,8 @@ class SpatialFitting(object):
         if not flag:
             return flag_old, flag_new
 
-        # if key in ['N_blended', 'N_negative_residuals']:
         n_old = self.get_dictionary_value(
             key, index, dct_new_fit=dct_new_fit)
-        # n_old = self.decomposition[key][index]
         n_new = dictResults[key]
         #  flag if old fitting results showed flagged feature
         if n_old > 0:
@@ -987,51 +977,6 @@ class SpatialFitting(object):
         #  number of features
         elif n_new == n_old:
             flag_new = flag_old
-        # elif key == 'best_fit_rchi2':
-        #     rchi2_old = self.decomposition['best_fit_rchi2'][index]
-        #     rchi2_new = dictResults['best_fit_rchi2']
-        #     if rchi2_old > self.max_rchi2:
-        #         flag_old = 1
-        #     if rchi2_new > self.max_rchi2:
-        #         flag_new = 1
-        #     #  do not punish fit if it is less "overfit"
-        #     if abs(rchi2_new - 1) > abs(rchi2_old - 1):
-        #         flag_new += 1
-        # elif key == 'fwhms_fit':
-        #     if self.mask_broad_flagged[index]:
-        #         flag_old = 1
-        #         fwhm_max_old = max(self.decomposition['fwhms_fit'][index])
-        #         fwhm_max_new = max(np.array(dictResults['fwhms_fit']))
-        #         #  no changes to the fit
-        #         if fwhm_max_new == fwhm_max_old:
-        #             flag_new = 1
-        #         #  punish fit if component got even broader
-        #         elif fwhm_max_new > fwhm_max_old:
-        #             flag_new = 2
-        #     else:
-        #         fwhms = dictResults['fwhms_fit']
-        #         if len(fwhms) > 1:
-        #             #  punish fit if broad component was introduced
-        #             fwhms = sorted(dictResults['fwhms_fit'])
-        #             if (fwhms[-1] > self.fwhm_factor * fwhms[-2]) and\
-        #                     (fwhms[-1] - fwhms[-2]) > self.fwhm_separation:
-        #                 flag_new = 1
-        # elif key == 'N_components':
-        #     ncomps_expected = self.ncomps_expected[index]
-        #     ncomps_old = self.decomposition['N_components'][index]
-        #     ncomps_new = dictResults['N_components']
-        #     ncomps_difference_old = max(
-        #         self.max_diff_comps, abs(ncomps_old - ncomps_expected))\
-        #         - self.max_diff_comps
-        #     if ncomps_difference_old > 0:
-        #         flag_old = 1
-        #     ncomps_difference_new = max(
-        #         self.max_diff_comps, abs(ncomps_new - ncomps_expected))\
-        #         - self.max_diff_comps
-        #     if ncomps_difference_new > 0:
-        #         flag_new = 1
-        #     if ncomps_difference_new > ncomps_difference_old:
-        #         flag_new += 1
 
         return flag_old, flag_new
 
@@ -1102,31 +1047,49 @@ class SpatialFitting(object):
         if not self.flag_ncomps:
             return flag_old, flag_new
 
-        ncomps_expected = self.ncomps_expected[index]
-        ncomps_old = self.get_dictionary_value(
+        njumps_old = self.ncomps_jumps[index]
+
+        loc = self.location[index]
+        indices = get_neighbors(
+            loc, exclude_p=False, shape=self.shape, nNeighbors=1,
+            get_indices=True)
+        ncomps = self.ncomps_2d[indices]
+        ncomps[4] = self.get_dictionary_value(
             'N_components', index, dct_new_fit=dct_new_fit)
-        # ncomps_old = self.decomposition['N_components'][index]
-        ncomps_new = dictResults['N_components']
-        # ncomps_difference_old = max(
-        #     self.max_diff_comps, abs(ncomps_old - ncomps_expected))\
-        #     - self.max_diff_comps
-        # if ncomps_difference_old > 0:
+        njumps_new = self.number_of_component_jumps(ncomps)
+
+        # ncomps_expected = self.ncomps_expected[index]
+        # ncomps_old = self.get_dictionary_value(
+        #     'N_components', index, dct_new_fit=dct_new_fit)
+        # # ncomps_old = self.decomposition['N_components'][index]
+        # ncomps_new = dictResults['N_components']
+        # # ncomps_difference_old = max(
+        # #     self.max_diff_comps, abs(ncomps_old - ncomps_expected))\
+        # #     - self.max_diff_comps
+        # # if ncomps_difference_old > 0:
+        # #     flag_old = 1
+        # # ncomps_difference_new = max(
+        # #     self.max_diff_comps, abs(ncomps_new - ncomps_expected))\
+        # #     - self.max_diff_comps
+        # # if ncomps_difference_new > 0:
+        # #     flag_new = 1
+        # # if ncomps_difference_new > ncomps_difference_old:
+        # #     flag_new += 1
+        # ncomps_difference_old = abs(ncomps_old - ncomps_expected)
+        # ncomps_difference_new = abs(ncomps_new - ncomps_expected)
+        #
+        # if ncomps_difference_old > self.max_diff_comps:
         #     flag_old = 1
-        # ncomps_difference_new = max(
-        #     self.max_diff_comps, abs(ncomps_new - ncomps_expected))\
-        #     - self.max_diff_comps
-        # if ncomps_difference_new > 0:
-        #     flag_new = 1
+        # if ncomps_difference_new > self.max_diff_comps:
+        #     flag_new = flag_old
         # if ncomps_difference_new > ncomps_difference_old:
         #     flag_new += 1
-        ncomps_difference_old = abs(ncomps_old - ncomps_expected)
-        ncomps_difference_new = abs(ncomps_new - ncomps_expected)
 
-        if ncomps_difference_old > self.max_diff_comps:
+        if njumps_old > self.n_max_jump_comps:
             flag_old = 1
-        if ncomps_difference_new > self.max_diff_comps:
-            flag_new = flag_old
-        if ncomps_difference_new > ncomps_difference_old:
+        if njumps_new > self.n_max_jump_comps:
+            flag_new = 1
+        if njumps_new > njumps_old:
             flag_new += 1
 
         return flag_old, flag_new
@@ -1167,21 +1130,12 @@ class SpatialFitting(object):
             dictResults, index, key='N_negative_residuals',
             flag=self.flag_residual, dct_new_fit=dct_new_fit)
 
-        # flag_rchi2_old, flag_rchi2_new = self.get_flags(
-        #     dictResults, index, key='best_fit_rchi2',
-        #     flag=self.flag_rchi2)
         flag_rchi2_old, flag_rchi2_new = self.get_flags_rchi2(
             dictResults, index, dct_new_fit=dct_new_fit)
 
-        # flag_broad_old, flag_broad_new = self.get_flags(
-        #     dictResults, index, key='fwhms_fit',
-        #     flag=self.flag_broad)
         flag_broad_old, flag_broad_new = self.get_flags_broad(
             dictResults, index, dct_new_fit=dct_new_fit)
 
-        # flag_ncomps_old, flag_ncomps_new = self.get_flags(
-        #     dictResults, index, key='N_components',
-        #     flag=self.flag_ncomps)
         flag_ncomps_old, flag_ncomps_new = self.get_flags_ncomps(
             dictResults, index, dct_new_fit=dct_new_fit)
 
@@ -1219,14 +1173,21 @@ class SpatialFitting(object):
         if n_flags_new > n_flags_old:
             return False
 
-        aicc_old = self.decomposition['best_fit_aicc'][index]
-        aicc_new = dictResults['best_fit_aicc']
+        aic_old = self.get_dictionary_value(
+            'best_fit_aic', index, dct_new_fit=dct_new_fit)
+        aic_new = dictResults['best_fit_aic']
+        residual_signal_mask = self.get_dictionary_value(
+            'residual_signal_mask', index, dct_new_fit=dct_new_fit)
 
-        if (aicc_new > aicc_old) and (n_flags_new == n_flags_old):
-            return False
+        # if (aic_new > aic_old) and (n_flags_new == n_flags_old):
+        #     return False
+        if (aic_new > aic_old):
+            statistic, pvalue = normaltest(residual_signal_mask)
+            if pvalue < self.min_pvalue:
+                return False
 
         # if index == 2850:
-        #     print('aicc:', aicc_old, aicc_new)
+        #     print('aic:', aic_old, aic_new)
 
         return True
 
@@ -1424,8 +1385,9 @@ class SpatialFitting(object):
         params_errs = best_fit_list[1]
         ncomps = best_fit_list[2]
         best_fit = best_fit_list[3]
+        residual_signal_mask = best_fit_list[4][signal_mask]
         rchi2 = best_fit_list[5]
-        aicc = best_fit_list[6]
+        aic = best_fit_list[6]
 
         if ncomps == 0:
             return None
@@ -1443,18 +1405,18 @@ class SpatialFitting(object):
 
         mask = mask_covering_gaussians(
             means, fwhms, n_channels, remove_intervals=noise_spike_ranges)
-        rchi2_gauss, aicc_gauss = goodness_of_fit(
-            spectrum, best_fit, rms, ncomps, mask=mask, get_aicc=True)
+        rchi2_gauss, aic_gauss = goodness_of_fit(
+            spectrum, best_fit, rms, ncomps, mask=mask, get_aic=True)
 
         N_blended = get_fully_blended_gaussians(params, get_count=True)
         N_negative_residuals = check_for_negative_residual(
             channels, spectrum, rms, best_fit_list, dct, get_count=True)
 
-        keys = ["best_fit_rchi2", "best_fit_aicc",
-                "gaussians_rchi2", "gaussians_aicc",
+        keys = ["best_fit_rchi2", "best_fit_aic", "residual_signal_mask",
+                "gaussians_rchi2", "gaussians_aic",
                 "N_components", "N_blended", "N_negative_residuals"]
-        values = [rchi2, aicc,
-                  rchi2_gauss, aicc_gauss,
+        values = [rchi2, aic, residual_signal_mask,
+                  rchi2_gauss, aic_gauss,
                   ncomps, N_blended, N_negative_residuals]
         for key, val in zip(keys, values):
             dictResults[key] = val
@@ -1737,20 +1699,11 @@ class SpatialFitting(object):
             ncomps_expected = dct['n_centroids'][key]
             interval = dct['means_interval'][key]
             ncomps = self.number_of_values_in_interval(means, interval)
-            # lower, upper = dct['means_interval'][key]
-            # ncomps = 0
-            # for mean in means:
-            #     if lower < mean < upper:
-            #         ncomps += 1
             if ncomps != ncomps_expected:
                 dct_refit = self.add_key_to_dict(
                     dct_refit, key='n_centroids', val=ncomps_expected)
                 dct_refit = self.add_key_to_dict(
                     dct_refit, key='means_interval', val=interval)
-                # length = len(dct_refit['n_centroids'])
-                # key_new = str(length + 1)
-                # dct_refit['n_centroids'][key_new] = dct['n_centroids'][key]
-                # dct_refit['means_interval'][key_new] = dct['means_interval'][key]
         return dct_refit
 
     def number_of_values_in_interval(self, lst, interval):
@@ -1839,15 +1792,6 @@ class SpatialFitting(object):
         self.say('\nthreshold for required components: {:.3f}'.format(self.min_p))
 
         self.determine_spectra_for_flagging()
-
-        # mask_refit = np.array(
-        #     [0 if x is None else 1 for x in self.decomposition['N_components']]).astype('bool')
-        # indices_refit = np.array(
-        #     self.decomposition['index_fit'])[mask_refit]
-        # locations_refit = np.take(
-        #     np.array(self.location), indices_refit, axis=0)
-        # self.indices_refit, self.locations_refit = self.check_indices_refit(
-        #     indices_refit, locations_refit)
 
         self.check_indices_refit()
         self.refitting()

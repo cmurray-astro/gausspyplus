@@ -2,11 +2,9 @@
 # @Date:   2019-03-03T20:27:37+01:00
 # @Filename: config_file.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T13:53:34+01:00
+# @Last modified time: 2019-03-10T13:21:37+01:00
 
-import configparser
 import textwrap
-from astropy import units as u
 
 
 def make(mode='simple', outputDir=''):
@@ -122,6 +120,7 @@ def make(mode='simple', outputDir=''):
         fwhm_factor_refit = None
         broad_neighbor_fraction = 0.5
         min_weight = 0.5
+        min_pvalue = 0.01
         only_print_flags = False
         """)
 

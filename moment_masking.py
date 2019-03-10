@@ -2,7 +2,7 @@
 # @Date:   2019-01-09T12:27:55+01:00
 # @Filename: moment_masking.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:36:57+01:00
+# @Last modified time: 2019-03-07T10:10:54+01:00
 
 """Moment masking procedure from Dame (2011)."""
 
@@ -189,11 +189,11 @@ class MomentMask(object):
 
     def calculate_rms_noise(self):
         say('Determining average rms noise from {} spectra ...'.format(self.numberRmsSpectra), verbose=self.verbose)
-        averageRms = calculate_average_rms_noise(
+        average_rms, average_rms_mad = calculate_average_rms_noise(
             self.dataSmoothedWithNans, self.numberRmsSpectra,
             maxConsecutiveChannels=self.maxConsecutiveChannels,
             pad_channels=self.pad_channels, random_seed=self.random_seed)
-        say('Determined average rms value of {}'.format(averageRms), verbose=self.verbose)
+        say('Determined average rms value of {}'.format(average_rms), verbose=self.verbose)
 
         say('Determining noise of smoothed cube ...', verbose=self.verbose)
 
@@ -201,7 +201,7 @@ class MomentMask(object):
             (self.data.shape[1], self.data.shape[2]))
 
         import gausspyplus.parallel_processing
-        gausspyplus.parallel_processing.init([self.locations, [self.dataSmoothedWithNans, self.maxConsecutiveChannels, self.pad_channels, averageRms]])
+        gausspyplus.parallel_processing.init([self.locations, [self.dataSmoothedWithNans, self.maxConsecutiveChannels, self.pad_channels, average_rms]])
 
         results_list = gausspyplus.parallel_processing.func(use_ncpus=self.use_ncpus, function='noise')
 
