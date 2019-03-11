@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-10T21:24:58+01:00
+# @Last modified time: 2019-03-11T17:08:58+01:00
 
 import ast
 import collections
@@ -363,7 +363,7 @@ class SpatialFitting(object):
         mask_neighbor[~self.nanMask] = ncomps_jumps[~self.nanMask] > self.n_max_jump_comps
         mask_neighbor = mask_neighbor.astype('bool')
         # return mask_neighbor, ncomps_expected
-        return mask_neighbor, ncomps_jumps, ncomps_2d
+        return mask_neighbor, ncomps_jumps, ncomps_1d
 
     def determine_spectra_for_flagging(self):
         self.mask_blended = self.define_mask(
@@ -381,7 +381,7 @@ class SpatialFitting(object):
             + self.mask_broad_flagged + self.mask_rchi2_flagged
 
         # self.mask_ncomps, self.ncomps_expected =\
-        self.mask_ncomps, self.ncomps_jumps, self.ncomps_2d =\
+        self.mask_ncomps, self.ncomps_jumps, self.ncomps =\
             self.define_mask_neighbor_ncomps(
                 mask_flagged.copy(), self.flag_ncomps)
 
@@ -1053,7 +1053,7 @@ class SpatialFitting(object):
         indices = get_neighbors(
             loc, exclude_p=False, shape=self.shape, nNeighbors=1,
             get_indices=True)
-        ncomps = self.ncomps_2d[indices]
+        ncomps = self.ncomps[indices]
         ncomps[4] = self.get_dictionary_value(
             'N_components', index, dct_new_fit=dct_new_fit)
         njumps_new = self.number_of_component_jumps(ncomps)
@@ -1176,8 +1176,7 @@ class SpatialFitting(object):
         aicc_old = self.get_dictionary_value(
             'best_fit_aicc', index, dct_new_fit=dct_new_fit)
         aicc_new = dictResults['best_fit_aicc']
-        residual_signal_mask = self.get_dictionary_value(
-            'residual_signal_mask', index, dct_new_fit=dct_new_fit)
+        residual_signal_mask = dictResults['residual_signal_mask']
 
         # if (aicc_new > aicc_old) and (n_flags_new == n_flags_old):
         #     return False

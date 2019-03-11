@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: shared_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-10T21:25:31+01:00
+# @Last modified time: 2019-03-10T21:27:19+01:00
 
 import numpy as np
 import warnings
@@ -105,7 +105,7 @@ def combined_gaussian(amps, fwhms, means, x):
 #     return rchi2
 
 
-def goodness_of_fit_newer(data, best_fit_final, errors, ncomps_fit, mask=None, get_aicc=False):
+def goodness_of_fit(data, best_fit_final, errors, ncomps_fit, mask=None, get_aicc=False):
     """Determine the goodness of fit (reduced chi2, AICc).
 
     Parameters
