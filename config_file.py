@@ -2,7 +2,7 @@
 # @Date:   2019-03-03T20:27:37+01:00
 # @Filename: config_file.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-10T21:25:14+01:00
+# @Last modified time: 2019-03-11T18:20:44+01:00
 
 import textwrap
 
@@ -121,6 +121,7 @@ def make(mode='simple', outputDir=''):
         broad_neighbor_fraction = 0.5
         min_weight = 0.5
         min_pvalue = 0.01
+        weight_factor = 2
         only_print_flags = False
         """)
 

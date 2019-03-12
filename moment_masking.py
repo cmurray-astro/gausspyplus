@@ -2,7 +2,7 @@
 # @Date:   2019-01-09T12:27:55+01:00
 # @Filename: moment_masking.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-07T10:10:54+01:00
+# @Last modified time: 2019-03-12T12:10:58+01:00
 
 """Moment masking procedure from Dame (2011)."""
 
@@ -63,9 +63,9 @@ class MomentMask(object):
         hdu = fits.open(self.pathToFile)[0]
         self.data = hdu.data
         self.header = hdu.header
-        self.wcs = WCS(self.header)
 
         self.header = correct_header(self.header)
+        self.wcs = WCS(self.header)
 
         self.data, self.header = remove_additional_axes(self.data, self.header)
 
@@ -254,4 +254,3 @@ class MomentMask(object):
         else:
             pathToOutputFile = None
         return pathToOutputFile
-use_ncpus

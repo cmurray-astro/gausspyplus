@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-11T17:08:58+01:00
+# @Last modified time: 2019-03-11T17:30:17+01:00
 
 import ast
 import collections
@@ -58,6 +58,7 @@ class SpatialFitting(object):
         self.fwhm_factor_refit = None
         self.broad_neighbor_fraction = 0.5
         self.min_weight = 0.5
+        self.weight_factor = 2
         self.min_pvalue = 0.01
         self.use_ncpus = None
         self.verbose = True
@@ -1635,10 +1636,15 @@ class SpatialFitting(object):
         possible_indices -= index
         possible_indices = np.delete(possible_indices, index)
 
+        normalization_factor = 1 / (2 * (self.weight_factor + 1))
+        w_2 = normalization_factor
+        w_1 = self.weight_factor * normalization_factor
+
         if direction in ['horizontal', 'vertical']:
-            weights = [1, 2, 2, 1]
+            weights = [w_2, w_1, w_1, w_2]
         else:
-            weights = np.array([0.5, 1, 1, 0.5])*np.sqrt(2)
+            weights = np.array([w_2 / np.sqrt(8), w_1 / np.sqrt(2),
+                                w_1 / np.sqrt(2), w_2 / np.sqrt(8)])
 
         counter = 0
         for i, weight in zip([-2, -1, 1, 2], weights):
