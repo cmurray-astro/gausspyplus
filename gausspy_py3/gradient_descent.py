@@ -1,8 +1,8 @@
-# @Author: riener
-# @Date:   2018-12-19T17:30:53+01:00
+# @Author: Robert Lindner
+# @Date:   Nov 10, 2014
 # @Filename: gradient_descent.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T16:07:21+01:00
+# @Last modified time: 2019-03-16T12:00:25+01:00
 
 
 

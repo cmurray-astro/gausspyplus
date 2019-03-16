@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-07T10:20:00+01:00
+# @Last modified time: 2019-03-16T19:02:55+01:00
 
 import getpass
 import itertools
@@ -13,6 +13,7 @@ import warnings
 import numpy as np
 
 from astropy import units as u
+from astropy.convolution import Gaussian1DKernel, Gaussian2DKernel, convolve
 from astropy.io import fits
 from astropy.stats import median_absolute_deviation
 from astropy.wcs import WCS
@@ -58,6 +59,23 @@ def check_if_all_values_are_none(value1, value2):
 
 def correct_header(header, check_keywords={'BUNIT': 'K', 'CUNIT3': 'm/s'},
                    keep_only_wcs_keywords=False):
+    """Correct FITS header by checking keywords or removing unnecessary keywords.
+
+    Parameters
+    ----------
+    header : astropy.io.fits.Header
+        FITS header.
+    check_keywords : dict
+        Dictionary of FITS header keywords and corresponding values. The FITS header is checked for the presence of these keywords; if the keyword is not existing they are written to the header with the supplied values.
+    keep_only_wcs_keywords : bool
+        Default is 'False'. If set to 'True', the FITS header is stripped of all keywords other than the required minimum WCS keywords.
+
+    Returns
+    -------
+    header : astropy.io.fits.Header
+        Corrected FITS header.
+
+    """
     for keyword, value in check_keywords.items():
         if keyword not in header.keys():
             warnings.warn("{a} keyword not found in header. Assuming {a}={b}".format(a=keyword, b=value))
@@ -79,6 +97,29 @@ def correct_header(header, check_keywords={'BUNIT': 'K', 'CUNIT3': 'm/s'},
 
 def update_header(header, comments=[], remove_keywords=[], update_keywords={},
                   remove_old_comments=False, write_meta=True):
+    """Update FITS header.
+
+    Parameters
+    ----------
+    header : astropy.io.fits.Header
+        FITS header.
+    comments : list
+        List of comments that get written to the FITS header with the 'COMMENT' keyword.
+    remove_keywords : list
+        List of FITS header keywords that should be removed.
+    update_keywords : dict
+        Dictionary of FITS header keywords that get updated.
+    remove_old_comments : bool
+        Default is 'False'. If set to 'True', existing 'COMMENT' keywords of the FITS header are removed.
+    write_meta : bool
+        Default is 'True'. Adds or updates 'AUTHOR', 'ORIGIN', and 'DATE' FITS header keywords.
+
+    Returns
+    -------
+    header : astropy.io.fits.Header
+        Updated FITS header.
+
+    """
     if remove_old_comments:
         while ['COMMENT'] in header.keys():
             header.remove('COMMENT')
@@ -101,11 +142,31 @@ def update_header(header, comments=[], remove_keywords=[], update_keywords={},
     return header
 
 
-def remove_additional_axes(data, header, verbose=True, max_dim=3,
+def remove_additional_axes(data, header, max_dim=3,
                            keep_only_wcs_keywords=False):
-    """Remove additional axes (Stokes, etc.) from spectral cube."""
-    #  old name was remove_stokes
+    """Remove additional axes (Stokes, etc.) from spectral cube.
 
+    The old name of the function was 'remove_stokes'.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Data of the FITS array.
+    header : astropy.io.fits.Header
+        Header of the FITS array.
+    max_dim : int
+        Maximum number of dimensions the final data array should have. The default value is '3'.
+    keep_only_wcs_keywords : bool
+        Default is 'False'. If set to 'True', the FITS header is stripped of all keywords other than the required minimum WCS keywords.
+
+    Returns
+    -------
+    data : numpy.ndarray
+        Data of the FITS array, corrected for additional unwanted axes.
+    header : astropy.io.fits.Header
+        Updated FITS header.
+
+    """
     wcs = WCS(header)
 
     if header['NAXIS'] <= max_dim and wcs.wcs.naxis <= max_dim:
@@ -136,6 +197,25 @@ def remove_additional_axes(data, header, verbose=True, max_dim=3,
 
 
 def swap_axes(data, header, new_order):
+    """Swap the axes of a FITS cube.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Data of the FITS array.
+    header : astropy.io.fits.Header
+        Header of the FITS array.
+    new_order : tuple
+        New order of the axes of the FITS array, e.g. (2, 1, 0).
+
+    Returns
+    -------
+    data : numpy.ndarray
+        FITS array with swaped axes.
+    header : astropy.io.fits.Header
+        Updated FITS header.
+
+    """
     dims = data.ndim
     data = np.transpose(data, new_order)
     hdu = fits.PrimaryHDU(data=data)
@@ -172,9 +252,29 @@ def get_slices(size, n):
 
 def get_list_slice_params(pathToFile=None, hdu=None, ncols=1, nrows=1,
                           velocity_slice=slice(None, None)):
-    """Calculate slices needed to slice PPV cube into individual subcubes."""
-    import itertools
+    """Calculate required slices to split a PPV cube into chosen number of subcubes.
 
+    The total number of subcubes is ncols * nrows.
+
+    Parameters
+    ----------
+    pathToFile : str
+        Filepath to the FITS cube.
+    hdu : astropy.io.fits.HDUList
+        Header/Data unit of the FITS cube.
+    ncols : int
+        Number of subcubes along 'NAXIS1'.
+    nrows : int
+        Number of subcubes along 'NAXIS2'.
+    velocity_slice : slice
+        Slice parameters for 'NAXIS3'. In the default settings the subcubes contain the full 'NAXIS3' range.
+
+    Returns
+    -------
+    slices: list
+        List containing slicing parameters for all three axes ('NAXIS1', 'NAXIS2', 'NAXIS3') of the FITS cube.
+
+    """
     check_if_all_values_are_none(hdu, pathToFile)
 
     if pathToFile is not None:
@@ -197,6 +297,7 @@ def get_list_slice_params(pathToFile=None, hdu=None, ncols=1, nrows=1,
 
 
 def get_locations(data=None, header=None):
+    """Get a list of index values [(y0, x0), ..., (yN, xM)] for (N x M) array."""
     if data is not None:
         yValues = np.arange(data.shape[1])
         xValues = np.arange(data.shape[2])
@@ -207,6 +308,20 @@ def get_locations(data=None, header=None):
 
 
 def save_fits(data, header, pathToFile, verbose=True):
+    """Save data array and header as FITS file.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Data array.
+    header : astropy.io.fits.Header
+        Header of the FITS array.
+    pathToFile : str
+        Filepath to which FITS array should get saved.
+    verbose : bool
+        Default is 'True'. Writes message to terminal about where the FITS file was saved.
+
+    """
     if not os.path.exists(os.path.dirname(pathToFile)):
         os.makedirs(os.path.dirname(pathToFile))
     fits.writeto(pathToFile, data, header=header, overwrite=True)
@@ -217,9 +332,29 @@ def save_fits(data, header, pathToFile, verbose=True):
 
 def open_fits_file(pathToFile, get_hdu=False, get_data=True, get_header=True,
                    remove_Stokes=True, check_wcs=True):
-    """"""
+    """Open a FITS file and return the HDU or data and/or header.
+
+    Parameters
+    ----------
+    pathToFile : str
+        Filepath to FITS array.
+    get_hdu : bool
+        Default is 'False'. If set to 'True', an astropy.io.fits.HDUList is returned. Overrides 'get_data' and 'get_header'.
+    get_data : bool
+        Default is 'True'. Returns a numpy.ndarray of the FITS array.
+    get_header : bool
+        Default is 'True'. Returns a astropy.io.fits.Header of the FITS array.
+    remove_Stokes : bool
+        Default is 'True'. If the FITS array contains more than three axes, these additional axes are removed so that the FITS array contains only ('NAXIS1', 'NAXIS2', 'NAXIS3').
+    check_wcs : bool
+        Default is 'True'. Corrects the FITS header with the default settings.
+
+    Returns
+    -------
+    astropy.io.fits.HDUList or numpy.ndarray and/or astropy.io.fits.Header.
+
+    """
     #  TODO: rework the check_wcs condition
-    from astropy.io import fits
 
     data = fits.getdata(pathToFile)
     header = fits.getheader(pathToFile)
@@ -243,43 +378,39 @@ def open_fits_file(pathToFile, get_hdu=False, get_data=True, get_header=True,
 def spatial_smoothing(data, header, save=False, pathOutputFile=None,
                       suffix=None, current_resolution=None,
                       target_resolution=None, verbose=True):
-    """Smooth the cube spatially.
-
-    NB: Note sure if this entirely correct but the smoothing seems to give
-    reasonable results.
+    """Smooth a FITS cube spatially and update its header.
 
     Parameters
     ----------
-    saveCube : boolean
-        If True it saves the smoothed cube as a FITS file to ~/gpy_prepared/FITS.
-    suffix : type
-        Suffix that will be added to the end of the filename if 'saveCube=True'.
-    smoothed_resolution : type
-        Resolution the slices of the cube should be smoothed to. Has to be
-        an astropy unit object (e.g., 5*u.arcmin, 0.6*u.deg, etc.)
+    data : numpy.ndarray
+        Data array of the FITS cube.
+    header : astropy.io.fits.Header
+        Header of the FITS cube.
+    save : bool
+        Default is 'False'. If set to 'True', the smoothed FITS cube is saved under 'pathOutputFile'.
+    pathOutputFile : str
+        Filepath to which smoothed FITS cube gets saved.
+    suffix : str
+        Suffix that gets added to the filename.
+    current_resolution : astropy.units.quantity.Quantity
+        Current size of the resolution element (FWHM of the beam).
+    target_resolution : astropy.units.quantity.Quantity
+        Final resolution element after smoothing.
+    verbose : bool
+        Default is 'True'. Writes diagnostic messages to the terminal.
 
     Returns
     -------
-    type
-        Description of returned object.
+    data : numpy.ndarray
+        Smoothed data array of the FITS cube.
+    header : astropy.io.fits.Header
+        Updated header of the FITS cube.
 
     """
-    # from radio_beam import Beam
-    # from spectral_cube import SpectralCube
-    from astropy import units as u
-    from astropy.convolution import Gaussian2DKernel, convolve
-
     check_if_value_is_none(save, pathOutputFile)
     check_if_all_values_are_none(current_resolution, target_resolution)
 
-    # # in case no beam info is present in the header use the pixel size as beam proxy
-    # if 'BMAJ' not in header:
-    #     header['BMAJ'] = abs(header['CDELT1'])
-    #     header['BMIN'] = abs(header['CDELT1'])
-    #     header['BPA'] = 0.
-
     wcs = WCS(header)
-    # cube = SpectralCube(data=data, wcs=wcs, header=header)
 
     fwhm_factor = np.sqrt(8*np.log(2))
     pixel_scale = abs(wcs.wcs.cdelt[0]) * wcs.wcs.cunit[0]
@@ -287,12 +418,6 @@ def spatial_smoothing(data, header, save=False, pathOutputFile=None,
     if target_resolution is None:
         target_resolution = 2*current_resolution
         warnings.warn('No smoothing resolution specified. Will smooth to a resolution of {}'.format(target_resolution))
-
-    # beam = Beam(target_resolution)
-    # new_cube = cube.convolve_to(beam)
-    #
-    # data = new_cube.hdu.data
-    # header = new_cube.hdu.header
 
     current_resolution = current_resolution.to(u.deg)
     target_resolution = target_resolution.to(u.deg)
@@ -323,11 +448,35 @@ def spatial_smoothing(data, header, save=False, pathOutputFile=None,
 def spectral_smoothing(data, header, save=False, pathOutputFile=None,
                        suffix=None, current_resolution=None,
                        target_resolution=None, verbose=True):
-    """"""
-    from astropy import units as u
-    # from spectral_cube import SpectralCube
-    from astropy.convolution import convolve, Gaussian1DKernel
+    """Smooth a FITS cube spectrally and update its header.
 
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Data array of the FITS cube.
+    header : astropy.io.fits.Header
+        Header of the FITS cube.
+    save : bool
+        Default is 'False'. If set to 'True', the smoothed FITS cube is saved under 'pathOutputFile'.
+    pathOutputFile : str
+        Filepath to which smoothed FITS cube gets saved.
+    suffix : str
+        Suffix that gets added to the filename.
+    current_resolution : astropy.units.quantity.Quantity
+        Current size of the spectral resolution element (velocity channel).
+    target_resolution : astropy.units.quantity.Quantity
+        Final spectral resolution element after smoothing.
+    verbose : bool
+        Default is 'True'. Writes diagnostic messages to the terminal.
+
+    Returns
+    -------
+    data : numpy.ndarray
+        Smoothed data array of the FITS cube.
+    header : astropy.io.fits.Header
+        Updated header of the FITS cube.
+
+    """
     check_if_value_is_none(save, pathOutputFile)
 
     wcs = WCS(header)

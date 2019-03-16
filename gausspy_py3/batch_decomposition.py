@@ -1,8 +1,8 @@
-# @Author: riener
-# @Date:   2018-12-19T17:30:53+01:00
+# @Author: Robert Lindner
+# @Date:   Nov 10, 2014
 # @Filename: batch_decomposition.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:18:54+01:00
+# @Last modified time: 2019-03-16T15:59:58+01:00
 
 import pickle
 import multiprocessing
@@ -99,8 +99,6 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=1):
     return front + out
 
 
- # use this only for testing purposes - shows weird behaviour in that it
- # freezes sometimes after the multiprocessing and is also slower
 def func(use_ncpus=None):
     # Multiprocessing code
     ncpus = multiprocessing.cpu_count()

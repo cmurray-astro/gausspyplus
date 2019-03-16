@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: training_set.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:57:43+01:00
+# @Last modified time: 2019-03-16T11:52:03+01:00
 
 import ast
 import configparser
