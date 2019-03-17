@@ -1,8 +1,8 @@
 # @Author: Robert Lindner
-# @Date:
+# @Date: Nov 10, 2014
 # @Filename: ioHDF5.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-01T13:24:45+01:00
+# @Last modified time: 2019-03-16T12:00:32+01:00
 
 import h5py
 import numpy as np

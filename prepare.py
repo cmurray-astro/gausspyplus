@@ -2,7 +2,11 @@
 # @Date:   2019-02-26T16:38:04+01:00
 # @Filename: prepare.py
 # @Last modified by:   riener
+<<<<<<< HEAD
 # @Last modified time: 2019-03-13T13:11:33+01:00
+=======
+# @Last modified time: 2019-03-16T18:22:07+01:00
+>>>>>>> a5f9dd4c3cba870b78e36fad004da8f960e22f64
 
 import ast
 import configparser
@@ -72,32 +76,6 @@ class GaussPyPrepare(object):
                     setattr(self, key, value)
                 else:
                     raise Exception('Could not parse parameter {} from config file'.format(key))
-
-    # def set_up_logger(self):
-    #     #  setting up logger
-    #     now = datetime.now()
-    #     date_string = "{}{}{}-{}{}{}".format(
-    #         now.year,
-    #         str(now.month).zfill(2),
-    #         str(now.day).zfill(2),
-    #         str(now.hour).zfill(2),
-    #         str(now.minute).zfill(2),
-    #         str(now.second).zfill(2))
-    #
-    #     dirname = os.path.join(self.parentDirname, 'gpy_log')
-    #     if not os.path.exists(dirname):
-    #         os.makedirs(dirname)
-    #     filename = os.path.splitext(os.path.basename(self.filename))[0]
-    #
-    #     logname = os.path.join(dirname, '{}_prepare_{}.log'.format(
-    #         date_string, filename))
-    #     logging.basicConfig(filename=logname,
-    #                         filemode='a',
-    #                         format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-    #                         datefmt='%H:%M:%S',
-    #                         level=logging.DEBUG)
-    #
-    #     self.logger = logging.getLogger(__name__)
 
     def check_settings(self):
         if self.testing and (self.data_location is None):
