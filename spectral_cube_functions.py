@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-07T10:20:00+01:00
+# @Last modified time: 2019-03-13T13:08:54+01:00
 
 import getpass
 import itertools
@@ -524,10 +524,10 @@ def make_subcube(sliceParams, pathToInputFile=None, hdu=None, dtype='float32',
 
     data = hdu.data
     header = hdu.header
-    header = transform_header_from_crota_to_pc(header)
-    for key in list(header.keys()):
-        if key.startswith('PC'):
-            print(key, header[key])
+    # header = transform_header_from_crota_to_pc(header)
+    # for key in list(header.keys()):
+    #     if key.startswith('PC'):
+    #         print(key, header[key])
 
     data = data[sliceZ, sliceY, sliceX]
     data = data.astype(dtype)
@@ -620,92 +620,7 @@ def apply_noise_threshold(data, snr=3, pathToNoiseMap=None,
     return data
 
 
-def get_moment_map(data, wcs, order=0, linewidth='sigma', vel_unit=u.km/u.s):
-    """"""
-    from spectral_cube import SpectralCube
-
-    #  convert from the velocity unit of the cube to the desired unit
-    factor = wcs.wcs.cunit[2].to(vel_unit)
-    wcs.wcs.cunit[2] = vel_unit
-    wcs.wcs.cdelt[2] *= factor
-    wcs.wcs.crval[2] *= factor
-
-    cube = SpectralCube(data, wcs)
-    if order == 2:
-        if linewidth == 'fwhm':
-            moment = cube.linewidth_fwhm()
-        elif linewidth == 'sigma':
-            moment = cube.linewidth_sigma()
-    else:
-        moment = cube.moment(order=order)
-
-    return moment.hdu
-
-
-def moment_map(hdu=None, pathToInputFile=None, sliceParams=None,
-               pathToOutputFile=None,
-               applyNoiseThreshold=False, snr=3, order=0, linewidth='sigma',
-               p_limit=0.025, pad_channels=5,
-               vel_unit=u.km/u.s, pathToNoiseMap=None,
-               save=False, get_hdu=True, use_ncpus=None,
-               restoreNans=False, nanMask=None):
-    """
-    Previously called 'make_moment_fits'
-    """
-    from astropy.wcs import WCS
-
-    print('\ncreate a moment{} fits file from the cube'.format(order))
-
-    check_if_value_is_none(restoreNans, nanMask)
-    check_if_all_values_are_none(hdu, pathToInputFile)
-
-    if hdu is None:
-        hdu = open_fits_file(pathToInputFile, get_hdu=True)
-
-    if sliceParams is not None:
-        data, header = make_subcube(sliceParams, hdu=hdu)
-        sliceParams = (sliceParams[1], sliceParams[2])
-    else:
-        sliceParams = (slice(None), slice(None))
-
-    data = hdu.data
-    header = hdu.header
-    wcs = WCS(header)
-
-    if applyNoiseThreshold:
-        data = apply_noise_threshold(data, snr=snr, sliceParams=sliceParams,
-                                     pathToNoiseMap=pathToNoiseMap,
-                                     p_limit=p_limit, pad_channels=pad_channels,
-                                     use_ncpus=use_ncpus)
-
-    hdu = get_moment_map(data, wcs, order=order, linewidth=linewidth,
-                         vel_unit=vel_unit)
-
-    if restoreNans:
-        locations = list(
-            itertools.product(
-                range(hdu.data.shape[0]), range(hdu.data.shape[1])))
-        for ypos, xpos in locations:
-            if nanMask[ypos, xpos]:
-                hdu.data[ypos, xpos] = np.nan
-
-    if save:
-        if order == 2:
-            suffix = 'mom2_map_{}'.format(linewidth)
-        else:
-            suffix = 'mom{}_map'.format(order)
-        if pathToOutputFile is None:
-            pathToOutputFile = get_path_to_output_file(
-                pathToInputFile, suffix=suffix,
-                filename='moment{}_map.fits'.format(order))
-
-        save_fits(hdu.data, hdu.header, pathToOutputFile, verbose=True)
-
-    if get_hdu:
-        return hdu
-
-
-def change_header(header, format='pp', keep_axis='1', comments=[]):
+def change_header(header, format='pp', keep_axis='1', comments=[], dct_keys={}):
     import getpass
     import socket
 
@@ -744,7 +659,118 @@ def change_header(header, format='pp', keep_axis='1', comments=[]):
     for comment in comments:
         prihdr['COMMENT'] = comment
 
+    for key, val in dct_keys.items():
+        prihdr[key] = val
+
     return prihdr
+
+
+def get_moment_map(data, header, order=0, linewidth='sigma', vel_unit=u.km/u.s):
+    """"""
+    wcs = WCS(header)
+
+    #  convert from the velocity unit of the cube to the desired unit
+    factor = wcs.wcs.cunit[2].to(vel_unit)
+    wcs.wcs.cunit[2] = vel_unit
+    wcs.wcs.cdelt[2] *= factor
+    wcs.wcs.crval[2] *= factor
+
+    header.update(wcs.to_header())
+
+    bunit = u.Unit('')
+    velocity_bin = wcs.wcs.cdelt[2]
+    offset = wcs.wcs.crval[2] - wcs.wcs.cdelt[2]*(wcs.wcs.crpix[2] - 1)
+    spectral_channels = offset + np.arange(data.shape[0])*wcs.wcs.cdelt[2]
+    moment_data = np.zeros(data.shape[1:])
+    locations = list(
+        itertools.product(range(data.shape[1]), range(data.shape[2])))
+
+    for y, x in locations:
+        spectrum = data[:, y, x]
+        nanmask = np.logical_not(np.isnan(spectrum))
+
+        if order == 0:
+            moment_0 = velocity_bin * np.nansum(spectrum)
+            moment_data[y, x] = moment_0
+            bunit = u.Unit(header['BUNIT'])
+        if order == 1 or order == 2:
+            moment_1 = np.nansum(spectral_channels[nanmask]) * spectrum[nanmask]
+            moment_data[y, x] = moment_1
+        if order == 2:
+            numerator = np.nansum(
+                (spectral_channels[nanmask] - moment_1)**2 * spectrum[nanmask])
+            denominator = np.nansum(spectrum[nanmask])
+            moment_2 = np.sqrt(numerator / denominator)
+            moment_data[y, x] = moment_2
+
+    header = change_header(
+        header, comments=['moment {} map'.format(order)],
+        dct_keys={'BUNIT': (bunit * vel_unit).to_string()})
+
+    return fits.PrimaryHDU(moment_data, header)
+
+
+def moment_map(hdu=None, pathToInputFile=None, sliceParams=None,
+               pathToOutputFile=None,
+               applyNoiseThreshold=False, snr=3, order=0, linewidth='sigma',
+               p_limit=0.025, pad_channels=5,
+               vel_unit=u.km/u.s, pathToNoiseMap=None,
+               save=False, get_hdu=True, use_ncpus=None,
+               restoreNans=False, nanMask=None):
+    """
+    Previously called 'make_moment_fits'
+    """
+    # from astropy.wcs import WCS
+
+    print('\ncreate a moment{} fits file from the cube'.format(order))
+
+    check_if_value_is_none(restoreNans, nanMask)
+    check_if_all_values_are_none(hdu, pathToInputFile)
+
+    if hdu is None:
+        hdu = open_fits_file(pathToInputFile, get_hdu=True)
+
+    if sliceParams is not None:
+        hdu = make_subcube(sliceParams, hdu=hdu, get_hdu=True)
+        sliceParams = (sliceParams[1], sliceParams[2])
+    else:
+        sliceParams = (slice(None), slice(None))
+
+    data = hdu.data
+    header = hdu.header
+    # wcs = WCS(header)
+
+    if applyNoiseThreshold:
+        data = apply_noise_threshold(data, snr=snr, sliceParams=sliceParams,
+                                     pathToNoiseMap=pathToNoiseMap,
+                                     p_limit=p_limit, pad_channels=pad_channels,
+                                     use_ncpus=use_ncpus)
+
+    hdu = get_moment_map(data, header, order=order, linewidth=linewidth,
+                         vel_unit=vel_unit)
+
+    if restoreNans:
+        locations = list(
+            itertools.product(
+                range(hdu.data.shape[0]), range(hdu.data.shape[1])))
+        for ypos, xpos in locations:
+            if nanMask[ypos, xpos]:
+                hdu.data[ypos, xpos] = np.nan
+
+    if save:
+        if order == 2:
+            suffix = 'mom2_map_{}'.format(linewidth)
+        else:
+            suffix = 'mom{}_map'.format(order)
+        if pathToOutputFile is None:
+            pathToOutputFile = get_path_to_output_file(
+                pathToInputFile, suffix=suffix,
+                filename='moment{}_map.fits'.format(order))
+
+        save_fits(hdu.data, hdu.header, pathToOutputFile, verbose=True)
+
+    if get_hdu:
+        return hdu
 
 
 def get_pv_map(data, header, sum_over_axis=1, vel_unit=u.km/u.s):

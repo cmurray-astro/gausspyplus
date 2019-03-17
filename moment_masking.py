@@ -2,7 +2,7 @@
 # @Date:   2019-01-09T12:27:55+01:00
 # @Filename: moment_masking.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-12T12:10:58+01:00
+# @Last modified time: 2019-03-13T13:22:46+01:00
 
 """Moment masking procedure from Dame (2011)."""
 
@@ -45,7 +45,7 @@ class MomentMask(object):
         self.sliceParams = None
         self.p_limit = 0.025
         self.pad_channels = 5
-        self.use_nCpus = None
+        self.use_ncpus = None
         self.pathToNoiseMap = None
         self.maskingCube = None
         self.targetResolutionSpatial = None
@@ -225,12 +225,14 @@ class MomentMask(object):
         return mask_new
 
     def make_moment_map(self, order=0, linewidth='sigma', save=True, get_hdu=False,
-                        vel_unit=u.km/u.s, restoreNans=True):
+                        vel_unit=u.km/u.s, restoreNans=True, sliceParams=None):
         pathToOutputFile = self.get_path_to_output_file(
             suffix='_mom_{}_map'.format(order))
         hdu = fits.PrimaryHDU(
             data=self.data.copy(), header=self.header.copy())
-        moment_map(hdu=hdu, sliceParams=self.sliceParams, save=save,
+        if sliceParams is None:
+            sliceParams = self.sliceParams
+        moment_map(hdu=hdu, sliceParams=sliceParams, save=save,
                    order=order, linewidth=linewidth,
                    pathToOutputFile=pathToOutputFile,
                    vel_unit=vel_unit, applyNoiseThreshold=False,
@@ -238,12 +240,14 @@ class MomentMask(object):
                    nanMask=self.nanMask2D)
 
     def make_pv_map(self, save=True, get_hdu=False, vel_unit=u.km/u.s,
-                    sumOverLatitude=True, suffix='_pv_map'):
+                    sumOverLatitude=True, suffix='_pv_map', sliceParams=None):
         pathToOutputFile = self.get_path_to_output_file(
             suffix=suffix)
         hdu = fits.PrimaryHDU(
             data=self.data.copy(), header=self.header.copy())
-        pv_map(hdu=hdu, sliceParams=self.sliceParams, get_hdu=False, save=True,
+        if sliceParams is None:
+            sliceParams = self.sliceParams
+        pv_map(hdu=hdu, sliceParams=sliceParams, get_hdu=False, save=True,
                pathToOutputFile=pathToOutputFile, applyNoiseThreshold=False,
                sumOverLatitude=sumOverLatitude)
 
