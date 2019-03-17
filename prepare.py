@@ -2,11 +2,7 @@
 # @Date:   2019-02-26T16:38:04+01:00
 # @Filename: prepare.py
 # @Last modified by:   riener
-<<<<<<< HEAD
-# @Last modified time: 2019-03-13T13:11:33+01:00
-=======
-# @Last modified time: 2019-03-16T18:22:07+01:00
->>>>>>> a5f9dd4c3cba870b78e36fad004da8f960e22f64
+# @Last modified time: 2019-03-17T08:54:42+01:00
 
 import ast
 import configparser

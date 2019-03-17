@@ -2,11 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-<<<<<<< HEAD
-# @Last modified time: 2019-03-13T13:08:54+01:00
-=======
-# @Last modified time: 2019-03-16T19:02:55+01:00
->>>>>>> a5f9dd4c3cba870b78e36fad004da8f960e22f64
+# @Last modified time: 2019-03-17T10:13:42+01:00
 
 import getpass
 import itertools
@@ -433,15 +429,18 @@ def spatial_smoothing(data, header, save=False, pathOutputFile=None,
     # TODO: leave the kernel size optional
     kernel = Gaussian2DKernel(kernel_std, x_size=9, y_size=9)
 
-    nSpectra = data.shape[0]
-    for i in tqdm(range(nSpectra)):
-        channel = data[i, :, :]
-        channel_smoothed = convolve(channel, kernel)
-        data[i, :, :] = channel_smoothed
+    if data.ndim == 2:
+        data = convolve(data, kernel)
+    else:
+        nSpectra = data.shape[0]
+        for i in tqdm(range(nSpectra)):
+            channel = data[i, :, :]
+            channel_smoothed = convolve(channel, kernel)
+            data[i, :, :] = channel_smoothed
 
-    comments = ['spatially smoothed to a resolution of {}'.format(
-        target_resolution)]
-    header = update_header(header, comments=comments)
+        comments = ['spatially smoothed to a resolution of {}'.format(
+            target_resolution)]
+        header = update_header(header, comments=comments)
 
     if save:
         save_fits(data, header, pathOutputFile, verbose=verbose)
