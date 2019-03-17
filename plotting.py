@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: plotting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:37:22+01:00
+# @Last modified time: 2019-03-17T14:56:32+01:00
 
 import itertools
 import os
@@ -96,15 +96,15 @@ def pickle_load_file(pathToFile):
     return data
 
 
-def get_list_indices(data, subcube=False, pixelRange=None,
-                     listIndices=None, nSpectra=None, random_seed=111):
+def get_list_indices(data, subcube=False, pixel_range=None,
+                     list_indices=None, n_spectra=None, random_seed=111):
     random.seed(random_seed)
     # TODO: incorporate the nan_mask in this scheme
     grid_layout = None
-    if subcube or (pixelRange is not None):
-        if pixelRange is not None:
-            xmin, xmax = pixelRange['x']
-            ymin, ymax = pixelRange['y']
+    if subcube or (pixel_range is not None):
+        if pixel_range is not None:
+            xmin, xmax = pixel_range['x']
+            ymin, ymax = pixel_range['y']
         else:
             ymin, xmin = min(data['location'])
             ymax, xmax = max(data['location'])
@@ -114,40 +114,40 @@ def get_list_indices(data, subcube=False, pixelRange=None,
         cols = len(xValues)
         rows = len(yValues)
         grid_layout = [cols, rows]
-        nSpectra = cols*rows
+        n_spectra = cols*rows
 
-        listIndices = []
+        list_indices = []
         for location in locations:
-            listIndices.append(data['location'].index(location))
-    elif listIndices is None:
-        if nSpectra is None:
-            nSpectra = len(data['data_list'])
-            listIndices = np.arange(nSpectra)
+            list_indices.append(data['location'].index(location))
+    elif list_indices is None:
+        if n_spectra is None:
+            n_spectra = len(data['data_list'])
+            list_indices = np.arange(n_spectra)
         else:
-            listIndices = []
+            list_indices = []
             nIndices = len(data['data_list'])
             randomIndices = random.sample(range(nIndices), nIndices)
             for idx in randomIndices:
                 if 'nan_mask' in data.keys():
                     yi, xi = data['location'][idx]
                     if data['nan_mask'][:, yi, xi].all() != True:
-                        listIndices.append(idx)
-                        if len(listIndices) == nSpectra:
+                        list_indices.append(idx)
+                        if len(list_indices) == n_spectra:
                             break
                 else:
-                    listIndices.append(idx)
-                    if len(listIndices) == nSpectra:
+                    list_indices.append(idx)
+                    if len(list_indices) == n_spectra:
                         break
     else:
-        nSpectra = len(listIndices)
+        n_spectra = len(list_indices)
 
-    listIndices = [i for i in listIndices if data['data_list'][i] is not None]
-    nSpectra = len(listIndices)
+    list_indices = [i for i in list_indices if data['data_list'][i] is not None]
+    n_spectra = len(list_indices)
 
-    return listIndices, nSpectra, grid_layout
+    return list_indices, n_spectra, grid_layout
 
 
-def get_figure_params(n_channels, nSpectra, cols, rowsize, rowbreak,
+def get_figure_params(n_channels, n_spectra, cols, rowsize, rowbreak,
                       grid_layout, subcube=False):
     if n_channels > 700:
         colsize = round(rowsize*n_channels/659, 2)
@@ -156,8 +156,8 @@ def get_figure_params(n_channels, nSpectra, cols, rowsize, rowbreak,
 
     # if subcube is False:
     if grid_layout is None:
-        rows = int(nSpectra / (cols))
-        if nSpectra % cols != 0:
+        rows = int(n_spectra / (cols))
+        if n_spectra % cols != 0:
             rows += 1
 
         multiple_pdfs = True
@@ -241,8 +241,8 @@ def scale_fontsize(rowsize):
 
 def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
                  training_set=False, cols=5, rowsize=7.75, rowbreak=50, dpi=50,
-                 nSpectra=None, suffix='', subcube=False, pixelRange=None,
-                 listIndices=None, plotGaussians=True, plotResidual=True, plotSignalRanges=True, random_seed=111):
+                 n_spectra=None, suffix='', subcube=False, pixel_range=None,
+                 list_indices=None, plot_gaussians=True, plot_residual=True, plot_signal_ranges=True, random_seed=111):
 
     print("\nMake plots...")
 
@@ -271,11 +271,11 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
     else:
         header = None
 
-    listIndices, nSpectra, grid_layout = get_list_indices(
-        data, subcube=subcube, pixelRange=pixelRange, listIndices=listIndices, nSpectra=nSpectra, random_seed=random_seed)
+    list_indices, n_spectra, grid_layout = get_list_indices(
+        data, subcube=subcube, pixel_range=pixel_range, list_indices=list_indices, n_spectra=n_spectra, random_seed=random_seed)
 
     cols, rows, rowbreak, colsize, multiple_pdfs = get_figure_params(
-        n_channels, nSpectra, cols, rowsize, rowbreak, grid_layout, subcube=subcube)
+        n_channels, n_spectra, cols, rowsize, rowbreak, grid_layout, subcube=subcube)
 
     fontsize = scale_fontsize(rowsize)
 
@@ -289,9 +289,9 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
     fig.patch.set_alpha(1.0)
     # fig.subplots_adjust(hspace=0.5)
 
-    pbar = tqdm(total=nSpectra)
+    pbar = tqdm(total=n_spectra)
 
-    for i, idx in enumerate(listIndices):
+    for i, idx in enumerate(list_indices):
         pbar.update(1)
         if 'location' in data.keys():
             yi, xi = data['location'][idx]
@@ -336,7 +336,7 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
         nComponents = len(fit_amps)
 
         # Plot individual components
-        if plotGaussians:
+        if plot_gaussians:
             for j in range(nComponents):
                 gauss = gaussian(
                     fit_amps[j], fit_fwhms[j], fit_means[j], channels)
@@ -349,7 +349,7 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
         else:
             rchi2 = decomp['best_fit_rchi2'][idx]
 
-        if plotSignalRanges:
+        if plot_signal_ranges:
             plot_signal_ranges(ax, data, idx, figChannels)
 
         rchi2gauss = None
@@ -361,20 +361,20 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
         add_figure_properties(ax, rms, figMinChannel, figMaxChannel, header=header,
                               fontsize=fontsize)
 
-        if plotResidual:
+        if plot_residual:
             row_i = int((i - k*(rowbreak*cols)) / cols)*3 + 2
             col_i = i % cols
             ax = plt.subplot2grid((3*rows_in_figure, cols),
                                   (row_i, col_i))
 
             ax.step(figChannels, y - combined_gauss, color='black', lw=0.5)
-            if plotSignalRanges:
+            if plot_signal_ranges:
                 plot_signal_ranges(ax, data, idx, figChannels)
 
             add_figure_properties(ax, rms, figMinChannel, figMaxChannel, header=header,
                                   residual=True, fontsize=fontsize)
 
-        if ((i + 1) % (rowbreak*cols) == 0) or ((i + 1) == nSpectra):
+        if ((i + 1) % (rowbreak*cols) == 0) or ((i + 1) == n_spectra):
             if multiple_pdfs:
                 filename = '{}{}_plots_part_{}.pdf'.format(fileName, suffix, k + 1)
             else:

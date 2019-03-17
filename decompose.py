@@ -2,7 +2,7 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-13T13:12:29+01:00
+# @Last modified time: 2019-03-17T14:22:59+01:00
 
 from __future__ import print_function
 
@@ -72,6 +72,8 @@ class GaussPyDecompose(object):
         Number of CPUs used in the decomposition. By default 75% of all CPUs on the machine are used.
     fitting : dct
         Description of attribute `fitting`.
+    separation_factor : float
+        The required minimum separation between two Gaussian components (mean1, fwhm1) and (mean2, fwhm2) is determined as separation_factor * min(fwhm1, fwhm2).
     main_beam_efficiency : float
         Default is 'None'. Specify if intensity values should be corrected by the main beam efficiency.
     vel_unit : astropy.units
@@ -115,7 +117,8 @@ class GaussPyDecompose(object):
         self.refit_residual = True
         self.refit_broad = True
         self.refit_blended = True
-        self.fwhm_factor = 1.5
+        self.separation_factor = 0.8493218002991817
+        self.fwhm_factor = 2.
 
         self.main_beam_efficiency = None
         self.vel_unit = u.km / u.s
@@ -191,7 +194,8 @@ class GaussPyDecompose(object):
         self.getting_ready()
 
         self.fitting = {
-            'improve_fitting': self.improve_fitting, 'min_fwhm': self.min_fwhm, 'max_fwhm': self.max_fwhm, 'min_offset': self.min_offset, 'snr': self.snr, 'snr_fit': self.snr_fit, 'significance': self.significance, 'snr_negative': self.snr_negative, 'rchi2_limit': self.rchi2_limit, 'max_amp_factor': self.max_amp_factor, 'negative_residual': self.refit_residual, 'broad': self.refit_broad, 'blended': self.refit_blended, 'fwhm_factor': self.fwhm_factor}
+            'improve_fitting': self.improve_fitting, 'min_fwhm': self.min_fwhm, 'max_fwhm': self.max_fwhm, 'min_offset': self.min_offset, 'snr': self.snr, 'snr_fit': self.snr_fit, 'significance': self.significance, 'snr_negative': self.snr_negative, 'rchi2_limit': self.rchi2_limit, 'max_amp_factor': self.max_amp_factor, 'negative_residual': self.refit_residual, 'broad': self.refit_broad, 'blended': self.refit_blended, 'fwhm_factor': self.fwhm_factor,
+            'separation_factor': self.separation_factor}
 
         self.say("\npickle load '{}'...".format(self.file))
 

@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: gp_plus.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-16T17:59:21+01:00
+# @Last modified time: 2019-03-17T14:25:02+01:00
 
 import itertools
 import sys
@@ -442,10 +442,63 @@ def get_initial_guesses(residual, rms, snr, significance, peak='positive',
     return amp_guesses, fwhm_guesses, offset_guesses
 
 
-def get_fully_blended_gaussians(params_fit, get_count=False):
+# def get_fully_blended_gaussians(params_fit, get_count=False):
+#     """Return information about blended Gaussian fit components.
+#
+#     A Gaussian fit component i is blended with another component if its mean position is contained within the standard deviation interval (mean - std, mean + std) of the other component.
+#
+#     Parameters
+#     ----------
+#     params_fit : list
+#         Parameter vector in the form of [amp1, ..., ampN, fwhm1, ..., fwhmN, mean1, ..., meanN].
+#     get_count : bool
+#         Default is 'False'. If set to 'True' only the number of blended components is returned.
+#
+#     Returns
+#     -------
+#     indices_blended : numpy.ndarray
+#         Indices of fitted Gaussian components that satisfy the criterion for blendedness, sorted from lowest to highest amplitude values.
+#
+#     """
+#     ncomps_fit = number_of_components(params_fit)
+#     amps_fit, fwhms_fit, offsets_fit = split_params(params_fit, ncomps_fit)
+#     stddevs_fit = list(np.array(fwhms_fit) / 2.354820045)
+#     indices_blended = np.array([])
+#     blended_pairs = []
+#     items = list(range(ncomps_fit))
+#
+#     N_blended = 0
+#
+#     for idx1, idx2 in itertools.combinations(items, 2):
+#         min1 = offsets_fit[idx1] - stddevs_fit[idx1]
+#         max1 = offsets_fit[idx1] + stddevs_fit[idx1]
+#
+#         min2 = offsets_fit[idx2] - stddevs_fit[idx2]
+#         max2 = offsets_fit[idx2] + stddevs_fit[idx2]
+#
+#         if (min1 < offsets_fit[idx2] < max1) or (
+#                 min2 < offsets_fit[idx1] < max2):
+#             indices_blended = np.append(indices_blended, np.array([idx1, idx2]))
+#             blended_pairs.append([idx1, idx2])
+#             N_blended += 1
+#
+#     if get_count:
+#         return N_blended
+#
+#     indices_blended = np.unique(indices_blended).astype('int')
+#     #  sort the identified blended components from lowest to highest amplitude value
+#     sort = np.argsort(np.array(amps_fit)[indices_blended])
+#
+#     return indices_blended[sort]
+
+
+def get_fully_blended_gaussians(params_fit, get_count=False,
+                                separation_factor=0.8493218002991817):
     """Return information about blended Gaussian fit components.
 
-    A Gaussian fit component i is blended with another component if its mean position is contained within the standard deviation interval (mean - std, mean + std) of the other component.
+    A Gaussian fit component i is blended with another component if the separation of their mean positions is less than the FWHM value of the narrower component multiplied by the 'separation_factor'.
+
+    The default value for the separation_factor (0.8493218002991817) is based on the minimum required separation distance to distinguish two identical Gaussian peaks (= 2*std).
 
     Parameters
     ----------
@@ -453,6 +506,8 @@ def get_fully_blended_gaussians(params_fit, get_count=False):
         Parameter vector in the form of [amp1, ..., ampN, fwhm1, ..., fwhmN, mean1, ..., meanN].
     get_count : bool
         Default is 'False'. If set to 'True' only the number of blended components is returned.
+    separation_factor : float
+        The required minimum separation between two Gaussian components (mean1, fwhm1) and (mean2, fwhm2) is determined as separation_factor * min(fwhm1, fwhm2).
 
     Returns
     -------
@@ -462,7 +517,7 @@ def get_fully_blended_gaussians(params_fit, get_count=False):
     """
     ncomps_fit = number_of_components(params_fit)
     amps_fit, fwhms_fit, offsets_fit = split_params(params_fit, ncomps_fit)
-    stddevs_fit = list(np.array(fwhms_fit) / 2.354820045)
+    # stddevs_fit = list(np.array(fwhms_fit) / 2.354820045)
     indices_blended = np.array([])
     blended_pairs = []
     items = list(range(ncomps_fit))
@@ -470,14 +525,11 @@ def get_fully_blended_gaussians(params_fit, get_count=False):
     N_blended = 0
 
     for idx1, idx2 in itertools.combinations(items, 2):
-        min1 = offsets_fit[idx1] - stddevs_fit[idx1]
-        max1 = offsets_fit[idx1] + stddevs_fit[idx1]
+        min_separation = min(
+            fwhms_fit[idx1], fwhms_fit[idx2]) * separation_factor
+        separation = abs(offsets_fit[idx1] - offsets_fit[idx2])
 
-        min2 = offsets_fit[idx2] - stddevs_fit[idx2]
-        max2 = offsets_fit[idx2] + stddevs_fit[idx2]
-
-        if (min1 < offsets_fit[idx2] < max1) or (
-                min2 < offsets_fit[idx1] < max2):
+        if separation < min_separation:
             indices_blended = np.append(indices_blended, np.array([idx1, idx2]))
             blended_pairs.append([idx1, idx2])
             N_blended += 1
@@ -955,7 +1007,8 @@ def check_for_blended_feature(vel, data, errors, best_fit_list, dct,
     if ncomps_fit < 2:
         return best_fit_list
 
-    exclude_indices = get_fully_blended_gaussians(params_fit)
+    exclude_indices = get_fully_blended_gaussians(
+        params_fit, separation_factor=dct['separation_factor'])
 
     #  skip if there are no blended features
     if exclude_indices.size == 0:
@@ -1248,6 +1301,7 @@ def try_to_improve_fitting(vel, data, errors, params_fit, ncomps_fit, dct,
         get_count=True)
 
     params_fit = best_fit_list[0]
-    N_blended = get_fully_blended_gaussians(params_fit, get_count=True)
+    N_blended = get_fully_blended_gaussians(
+        params_fit, get_count=True, separation_factor=dct['separation_factor'])
 
     return best_fit_list, N_negative_residuals, N_blended, log_gplus

@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-16T16:30:15+01:00
+# @Last modified time: 2019-03-17T14:18:11+01:00
 
 import ast
 import collections
@@ -745,7 +745,10 @@ class SpatialFitting(object):
             upper = means[idx] + fwhms[idx]
         elif flag == 'blended':
             params = amps + fwhms + means
-            indices = get_fully_blended_gaussians(params)
+            separation_factor = self.decomposition[
+                'improve_fit_settings']['separation_factor']
+            indices = get_fully_blended_gaussians(
+                params, separation_factor=separation_factor)
             lower = max(0, min(
                 np.array(means)[indices] - np.array(fwhms)[indices]))
             upper = max(
@@ -1328,7 +1331,9 @@ class SpatialFitting(object):
         rchi2_gauss, aicc_gauss = goodness_of_fit(
             spectrum, best_fit, rms, ncomps, mask=mask, get_aicc=True)
 
-        N_blended = get_fully_blended_gaussians(params, get_count=True)
+        N_blended = get_fully_blended_gaussians(
+            params, get_count=True, separation_factor=self.decomposition[
+                'improve_fit_settings']['separation_factor'])
         N_negative_residuals = check_for_negative_residual(
             channels, spectrum, rms, best_fit_list, dct, get_count=True)
 

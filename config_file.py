@@ -2,7 +2,7 @@
 # @Date:   2019-03-03T20:27:37+01:00
 # @Filename: config_file.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-11T18:20:44+01:00
+# @Last modified time: 2019-03-17T14:52:57+01:00
 
 import textwrap
 
@@ -24,6 +24,7 @@ def make(mode='simple', outputDir=''):
         snr_noise_spike = 5.
         min_fwhm = 1.
         max_fwhm = None
+        separation_factor = 0.8493218002991817
         fwhm_factor = 2.
         rchi2_limit = 1.5
 
