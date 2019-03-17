@@ -2,7 +2,11 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: training_set.py
 # @Last modified by:   riener
+<<<<<<< HEAD
 # @Last modified time: 2019-03-17T14:58:34+01:00
+=======
+# @Last modified time: 2019-03-17T15:04:19+01:00
+>>>>>>> aa4bda402719d079ed5ed03d87f577ba500b395b
 
 import ast
 import configparser
@@ -183,7 +187,7 @@ class GaussPyTrainingSet(object):
 
         #  start multiprocessing
         mp_init([self, indices])
-        results_list = mp_func(self.n_spectra)
+        results_list = mp_func(self.n_spectra, use_ncpus=self.use_ncpus)
         print('SUCCESS\n')
         for result in results_list:
             if result is not None:

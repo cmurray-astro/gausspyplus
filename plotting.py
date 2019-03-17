@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: plotting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-17T14:56:32+01:00
+# @Last modified time: 2019-03-17T15:03:08+01:00
 
 import itertools
 import os
@@ -242,7 +242,7 @@ def scale_fontsize(rowsize):
 def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
                  training_set=False, cols=5, rowsize=7.75, rowbreak=50, dpi=50,
                  n_spectra=None, suffix='', subcube=False, pixel_range=None,
-                 list_indices=None, plot_gaussians=True, plot_residual=True, plot_signal_ranges=True, random_seed=111):
+                 list_indices=None, gaussians=True, residual=True, signal_ranges=True, random_seed=111):
 
     print("\nMake plots...")
 
@@ -336,7 +336,7 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
         nComponents = len(fit_amps)
 
         # Plot individual components
-        if plot_gaussians:
+        if gaussians:
             for j in range(nComponents):
                 gauss = gaussian(
                     fit_amps[j], fit_fwhms[j], fit_means[j], channels)
@@ -349,7 +349,7 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
         else:
             rchi2 = decomp['best_fit_rchi2'][idx]
 
-        if plot_signal_ranges:
+        if signal_ranges:
             plot_signal_ranges(ax, data, idx, figChannels)
 
         rchi2gauss = None
@@ -361,14 +361,14 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
         add_figure_properties(ax, rms, figMinChannel, figMaxChannel, header=header,
                               fontsize=fontsize)
 
-        if plot_residual:
+        if residual:
             row_i = int((i - k*(rowbreak*cols)) / cols)*3 + 2
             col_i = i % cols
             ax = plt.subplot2grid((3*rows_in_figure, cols),
                                   (row_i, col_i))
 
             ax.step(figChannels, y - combined_gauss, color='black', lw=0.5)
-            if plot_signal_ranges:
+            if signal_ranges:
                 plot_signal_ranges(ax, data, idx, figChannels)
 
             add_figure_properties(ax, rms, figMinChannel, figMaxChannel, header=header,
