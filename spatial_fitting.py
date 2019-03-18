@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-17T14:18:11+01:00
+# @Last modified time: 2019-03-18T10:38:49+01:00
 
 import ast
 import collections
@@ -33,7 +33,6 @@ class SpatialFitting(object):
         self.max_fwhm = None
         self.rchi2_limit = 1.5
         self.rchi2_limit_refit = None
-        self.max_diff_comps = 2
         self.max_jump_comps = 2
         self.n_max_jump_comps = 2
         self.max_refitting_iteration = 30

@@ -2,7 +2,7 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-17T14:22:59+01:00
+# @Last modified time: 2019-03-18T13:38:58+01:00
 
 from __future__ import print_function
 
@@ -107,7 +107,6 @@ class GaussPyDecompose(object):
         self.improve_fitting = True
         self.min_fwhm = 1.
         self.max_fwhm = None
-        self.min_offset = 2.
         self.snr = 3.
         self.snr_fit = None
         self.significance = 5.
@@ -194,7 +193,7 @@ class GaussPyDecompose(object):
         self.getting_ready()
 
         self.fitting = {
-            'improve_fitting': self.improve_fitting, 'min_fwhm': self.min_fwhm, 'max_fwhm': self.max_fwhm, 'min_offset': self.min_offset, 'snr': self.snr, 'snr_fit': self.snr_fit, 'significance': self.significance, 'snr_negative': self.snr_negative, 'rchi2_limit': self.rchi2_limit, 'max_amp_factor': self.max_amp_factor, 'negative_residual': self.refit_residual, 'broad': self.refit_broad, 'blended': self.refit_blended, 'fwhm_factor': self.fwhm_factor,
+            'improve_fitting': self.improve_fitting, 'min_fwhm': self.min_fwhm, 'max_fwhm': self.max_fwhm, 'snr': self.snr, 'snr_fit': self.snr_fit, 'significance': self.significance, 'snr_negative': self.snr_negative, 'rchi2_limit': self.rchi2_limit, 'max_amp_factor': self.max_amp_factor, 'negative_residual': self.refit_residual, 'broad': self.refit_broad, 'blended': self.refit_blended, 'fwhm_factor': self.fwhm_factor,
             'separation_factor': self.separation_factor}
 
         self.say("\npickle load '{}'...".format(self.file))
@@ -204,7 +203,11 @@ class GaussPyDecompose(object):
 
         # TODO: check what consequences it has if one of those keywords is missing
         if 'header' in self.pickledData.keys():
-            self.header = self.pickledData['header']
+            self.header = correct_header(self.pickledData['header'])
+            self.wcs = WCS(self.header)
+            self.velocity_increment = (
+                self.wcs.wcs.cdelt[2] * self.wcs.wcs.cunit[2]).to(
+                    self.vel_unit).value
         if 'location' in self.pickledData.keys():
             self.location = self.pickledData['location']
         if 'nan_mask' in self.pickledData.keys():
@@ -215,13 +218,6 @@ class GaussPyDecompose(object):
         self.data = self.pickledData['data_list']
         self.channels = self.pickledData['x_values']
         self.errors = self.pickledData['error']
-
-        self.header = correct_header(self.header)
-        self.wcs = WCS(self.header)
-
-        self.velocity_increment = (
-            self.wcs.wcs.cdelt[2] * self.wcs.wcs.cunit[2]).to(
-                self.vel_unit).value
 
         if self.decomp_dirname is None:
             decomp_dirname = os.path.normpath(
