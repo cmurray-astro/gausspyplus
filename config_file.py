@@ -2,7 +2,7 @@
 # @Date:   2019-03-03T20:27:37+01:00
 # @Filename: config_file.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-17T14:52:57+01:00
+# @Last modified time: 2019-03-18T10:38:57+01:00
 
 import textwrap
 
@@ -36,7 +36,7 @@ def make(mode='simple', outputDir=''):
         refit_rchi2 = True
         refit_ncomps = True
 
-        p_limit = 0.025
+        p_limit = 0.02
         signal_mask = True
         pad_channels = 5
         min_channels = 100
@@ -52,7 +52,7 @@ def make(mode='simple', outputDir=''):
         [training]
 
         training_set = True
-        n_spectra = 5
+        n_spectra = 100
         order = 6
         use_all = False
 
@@ -96,7 +96,6 @@ def make(mode='simple', outputDir=''):
         snr2_thresh = None
 
         improve_fitting = True
-        min_offset = 2.
         snr_fit = None
         snr_negative = None
         max_amp_factor = 1.1
@@ -106,7 +105,6 @@ def make(mode='simple', outputDir=''):
 
         exclude_flagged = False
         rchi2_limit_refit = None
-        max_diff_comps = 2
         max_jump_comps = 2
         n_max_jump_comps = 2
         max_refitting_iteration = 30

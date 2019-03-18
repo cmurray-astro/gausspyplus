@@ -2,11 +2,8 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-<<<<<<< HEAD
-# @Last modified time: 2019-03-13T13:08:54+01:00
-=======
-# @Last modified time: 2019-03-16T19:02:55+01:00
->>>>>>> a5f9dd4c3cba870b78e36fad004da8f960e22f64
+# @Last modified time: 2019-03-17T23:45:27+01:00
+
 
 import getpass
 import itertools
@@ -574,7 +571,7 @@ def calculate_average_rms_noise(data, numberRmsSpectra, random_seed=111,
             break
 
     pbar.close()
-    return np.nanmean(rmsList), np.nanstd(rmsList)
+    return rmsList, np.nanmean(rmsList), np.nanstd(rmsList)
     # return np.nanmedian(rmsList), median_absolute_deviation(rmsList, ignore_nan=True)
 
 

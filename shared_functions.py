@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: shared_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-16T18:03:47+01:00
+# @Last modified time: 2019-03-18T00:09:17+01:00
 
 import time
 import warnings
@@ -651,7 +651,8 @@ def correct_rms(averageRms=None, idx=None):
 
 
 def get_rms_noise(spectrum, maxConsecutiveChannels=14, pad_channels=5,
-                  averageRms=None, idx=None):
+                  averageRms=None, idx=None, min_fraction_noise_channels=0.1,
+                  min_fraction_average_rms=0.1):
     """Short summary.
 
     Parameters
@@ -666,6 +667,10 @@ def get_rms_noise(spectrum, maxConsecutiveChannels=14, pad_channels=5,
         Average root-mean-square noise value that is used in case the noise cannot be determined from the spectrum itself.
     idx : int
         Index of the spectrum.
+    min_fraction_noise_channels : float
+        Required minimum fraction of spectral channels for reliable noise calculation. If this fraction is not reached, the 'averageRms' value (if supplied) is used or the spectrum is masked out.
+    min_fraction_average_rms : float
+        The estimated rms noise value has to exceed the average rms noise value by this fraction. Otherwise the 'averageRms' value (if supplied) is used or the spectrum is masked out.
 
     Returns
     -------
@@ -713,9 +718,10 @@ def get_rms_noise(spectrum, maxConsecutiveChannels=14, pad_channels=5,
     #  Step 3: determine the noise from the remaining channels
     rms = np.sqrt(np.sum(spectrum[~mask_total]**2) / np.size(spectrum[~mask_total]))
 
-    if np.count_nonzero(~mask_total) < 0.2*len(spectrum):
+    if np.count_nonzero(
+            ~mask_total) < min_fraction_noise_channels*len(spectrum):
         if averageRms is not None:
-            if rms < 0.1*averageRms:
+            if rms < min_fraction_average_rms*averageRms:
                 return correct_rms(averageRms=averageRms, idx=idx)
         else:
             return correct_rms(averageRms=averageRms, idx=idx)

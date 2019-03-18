@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: plotting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-17T15:03:08+01:00
+# @Last modified time: 2019-03-18T09:51:21+01:00
 
 import itertools
 import os
@@ -244,7 +244,7 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
                  n_spectra=None, suffix='', subcube=False, pixel_range=None,
                  list_indices=None, gaussians=True, residual=True, signal_ranges=True, random_seed=111):
 
-    print("\nMake plots...")
+    print("\nPlotting...")
 
     #  check if all necessary files are supplied
     if (pathToDecompPickle is None) and (training_set is False):
