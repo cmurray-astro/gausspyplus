@@ -2,7 +2,7 @@
 # @Date:   Nov 10, 2014
 # @Filename: AGD_decomposer.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-16T12:01:23+01:00
+# @Last modified time: 2019-03-18T13:53:24+01:00
 
 # Standard Libs
 import time
@@ -440,9 +440,9 @@ def AGD(vel, data, errors, idx=None, signal_ranges=None,
             params_fit = []
         #  TODO: check if ncomps_fit should be ncomps_gf
         best_fit_list, N_negative_residuals, N_blended, log_gplus =\
-        try_to_improve_fitting(
-            vel, data, errors, params_fit, ncomps_fit, dct, plot=plot,
-            signal_ranges=signal_ranges, noise_spike_ranges=noise_spike_ranges)
+            try_to_improve_fitting(
+                vel, data, errors, params_fit, ncomps_fit, dct,
+                signal_ranges=signal_ranges, noise_spike_ranges=noise_spike_ranges)
 
         params_fit, params_errs, ncomps_fit, best_fit_final, residual,\
             rchi2, aicc, new_fit, params_min, params_max = best_fit_list

@@ -2,7 +2,7 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-18T13:38:58+01:00
+# @Last modified time: 2019-03-18T13:44:44+01:00
 
 from __future__ import print_function
 
@@ -355,13 +355,13 @@ class GaussPyDecompose(object):
 
         dct_final_guesses["gausspy_settings"] = dct_gausspy_settings
 
-        if not self.training_set:
-            dct_final_guesses["improve_fit_settings"] = self.fitting
-        else:
-            dct_final_guesses["header"] = self.header
-            dct_final_guesses["location"] = self.location
-            dct_final_guesses["data_list"] = self.data
-            dct_final_guesses["error"] = self.errors
+        # if self.training_set:
+        dct_final_guesses["improve_fit_settings"] = self.fitting
+        # else:
+        #     dct_final_guesses["header"] = self.header
+        #     dct_final_guesses["location"] = self.location
+        #     dct_final_guesses["data_list"] = self.data
+        #     dct_final_guesses["error"] = self.errors
 
         filename = '{}{}_fit_fin.pickle'.format(self.filename, self.suffix)
         pathname = os.path.join(self.decomp_dirname, filename)
