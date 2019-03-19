@@ -2,7 +2,7 @@
 # @Date:   2019-03-03T20:27:37+01:00
 # @Filename: config_file.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-18T10:38:57+01:00
+# @Last modified time: 2019-03-19T12:02:13+01:00
 
 import textwrap
 
@@ -106,7 +106,7 @@ def make(mode='simple', outputDir=''):
         exclude_flagged = False
         rchi2_limit_refit = None
         max_jump_comps = 2
-        n_max_jump_comps = 2
+        n_max_jump_comps = 1
         max_refitting_iteration = 30
         flag_blended = True
         flag_residual = True
