@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-18T13:40:42+01:00
+# @Last modified time: 2019-03-25T10:13:18+01:00
 
 
 import getpass
@@ -574,7 +574,7 @@ def calculate_average_rms_noise(data, numberRmsSpectra, random_seed=111,
             break
 
     pbar.close()
-    return rmsList, np.nanmean(rmsList), np.nanstd(rmsList)
+    return np.nanmean(rmsList)
     # return np.nanmedian(rmsList), median_absolute_deviation(rmsList, ignore_nan=True)
 
 

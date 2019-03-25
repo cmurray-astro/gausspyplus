@@ -2,7 +2,7 @@
 # @Date:   2019-01-09T12:27:55+01:00
 # @Filename: moment_masking.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-13T13:22:46+01:00
+# @Last modified time: 2019-03-19T15:56:10+01:00
 
 """Moment masking procedure from Dame (2011)."""
 
@@ -189,7 +189,7 @@ class MomentMask(object):
 
     def calculate_rms_noise(self):
         say('Determining average rms noise from {} spectra ...'.format(self.numberRmsSpectra), verbose=self.verbose)
-        average_rms, average_rms_mad = calculate_average_rms_noise(
+        average_rms = calculate_average_rms_noise(
             self.dataSmoothedWithNans, self.numberRmsSpectra,
             maxConsecutiveChannels=self.maxConsecutiveChannels,
             pad_channels=self.pad_channels, random_seed=self.random_seed)

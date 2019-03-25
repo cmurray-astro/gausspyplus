@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-18T10:38:49+01:00
+# @Last modified time: 2019-03-19T16:52:05+01:00
 
 import ast
 import collections
@@ -19,7 +19,7 @@ import numpy as np
 
 from gausspyplus.shared_functions import goodness_of_fit, mask_channels, mask_covering_gaussians, combined_gaussian
 from gausspyplus.miscellaneous_functions import to_graph, get_neighbors, set_up_logger
-from gausspyplus.gausspy_py3.gp_plus import split_params, get_fully_blended_gaussians, check_for_peaks_in_residual, get_best_fit, check_for_negative_residual, remove_components_from_list
+from gausspyplus.gausspy_py3.gp_plus import split_params, get_fully_blended_gaussians, check_for_peaks_in_residual, get_best_fit, check_for_negative_residual, remove_components_from_sublists
 
 
 class SpatialFitting(object):
@@ -139,6 +139,7 @@ class SpatialFitting(object):
         normalization_factor = 1 / (2 * (self.weight_factor + 1))
         self.w_2 = normalization_factor
         self.w_1 = self.weight_factor * normalization_factor
+        self.w_min = self.w_1 / np.sqrt(2)
         self.min_p = 1 - self.w_2
 
         if self.rchi2_limit_refit is None:
@@ -317,6 +318,8 @@ class SpatialFitting(object):
             return np.zeros(self.length).astype('bool'), False
 
         nanmask_1d += self.nanMask  # not really necessary
+        if self.only_print_flags:
+            nanmask_1d = self.nanMask
         nanmask_2d = nanmask_1d.reshape(self.shape)
         ncomps_1d = np.empty(self.length)
         ncomps_1d.fill(np.nan)
@@ -411,7 +414,7 @@ class SpatialFitting(object):
         self.determine_spectra_for_flagging()
 
         self.mask_broad_refit = self.define_mask_broad(
-            self.fwhm_factor_refit, self.refit_broad)
+            self.refit_broad)
 
         self.mask_rchi2_refit = self.define_mask(
             'best_fit_rchi2', self.rchi2_limit_refit, self.refit_rchi2)
@@ -800,9 +803,9 @@ class SpatialFitting(object):
         indices, interval = self.components_in_interval(
             fwhms, means, interval)
 
-        amps, fwhms, means = remove_components_from_list(
+        amps, fwhms, means = remove_components_from_sublists(
             [amps, fwhms, means], indices)
-        amps_err, fwhms_err, means_err = remove_components_from_list(
+        amps_err, fwhms_err, means_err = remove_components_from_sublists(
             [amps_err, fwhms_err, means_err], indices)
 
         amps_new = self.decomposition['amplitudes_fit'][index_neighbor]
@@ -822,10 +825,10 @@ class SpatialFitting(object):
             return None
 
         remove_indices = np.delete(np.arange(len(amps_new)), indices)
-        amps_new, fwhms_new, means_new = remove_components_from_list(
+        amps_new, fwhms_new, means_new = remove_components_from_sublists(
             [amps_new, fwhms_new, means_new], remove_indices)
         amps_err_new, fwhms_err_new, means_err_new =\
-            remove_components_from_list(
+            remove_components_from_sublists(
                 [amps_err_new, fwhms_err_new, means_err_new], remove_indices)
 
         if len(amps_new) == 0:
@@ -1404,7 +1407,7 @@ class SpatialFitting(object):
         #
         #  first, check only immediate neighboring spectra
         #
-        mask_weight = weights > 1
+        mask_weight = weights >= self.w_min
         n_neighbors = np.count_nonzero(mask_weight)
 
         counts_choices = []
@@ -1433,8 +1436,6 @@ class SpatialFitting(object):
 
     def compute_weights(self, dct, weights):
         """Calculate weight of required components per centroid interval."""
-        weights = np.array(weights)*(1/6)
-
         dct['factor_required'] = {}
         dct['n_centroids'] = {}
         for key in dct['grouping']:
@@ -1528,7 +1529,8 @@ class SpatialFitting(object):
             upper = upper + self.mean_separation / 2
             dct_total['means_interval'][key] = [lower, upper]
 
-        for key in ['indices_neighbors', 'weights']:
+        # for key in ['indices_neighbors', 'weights']: # BUG!
+        for key in ['indices_neighbors']:
             dct_total[key] = dct_total[key].astype('int')
         #
         #  Calculate number of centroids per centroid interval of neighbors
@@ -1561,7 +1563,7 @@ class SpatialFitting(object):
         possible_indices = np.delete(possible_indices, index)
 
         if direction in ['horizontal', 'vertical']:
-            weights = [self.w_2, self.w_1, self.w_1, self.w_2]
+            weights = np.array([self.w_2, self.w_1, self.w_1, self.w_2])
         else:
             weights = np.array([self.w_2 / np.sqrt(8), self.w_1 / np.sqrt(2),
                                 self.w_1 / np.sqrt(2), self.w_2 / np.sqrt(8)])
@@ -1640,8 +1642,7 @@ class SpatialFitting(object):
 
     def select_neighbors_to_use_for_refit(self, dct):
         from functools import reduce
-
-        mask = dct['weights'] == 2
+        mask = dct['weights'] >= self.w_min
         indices = dct['indices_neighbors'][mask]
         dct['indices_refit'] = {}
 

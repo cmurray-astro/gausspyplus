@@ -2,7 +2,7 @@
 # @Date:   2019-02-26T16:38:04+01:00
 # @Filename: prepare.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-17T08:54:42+01:00
+# @Last modified time: 2019-03-19T13:48:49+01:00
 
 import ast
 import configparser
@@ -125,8 +125,7 @@ class GaussPyPrepare(object):
         self.data = hdu.data
         self.header = hdu.header
 
-        self.data, self.header = remove_additional_axes(
-            self.data, self.header, verbose=self.verbose)
+        self.data, self.header = remove_additional_axes(self.data, self.header)
 
         self.errors = np.empty((self.data.shape[1], self.data.shape[2]))
 
@@ -163,7 +162,7 @@ class GaussPyPrepare(object):
     def calculate_average_rms_from_data(self):
         self.say('\ncalculating average rms from data...')
 
-        self.average_rms, self.average_rms_mad = calculate_average_rms_noise(
+        self.average_rms = calculate_average_rms_noise(
             self.data.copy(), self.n_spectra_rms,
             pad_channels=self.pad_channels, random_seed=self.random_seed,
             maxConsecutiveChannels=self.maxConsecutiveChannels)
