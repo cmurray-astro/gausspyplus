@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-25T10:13:18+01:00
+# @Last modified time: 2019-03-25T10:20:55+01:00
 
 
 import getpass
@@ -235,6 +235,76 @@ def swap_axes(data, header, new_order):
     for keyword, value in header_diff.diff_keyword_values.items():
         header[keyword] = value[0][1]
     return data, header
+
+
+def get_slice_parameters(header=None, wcs=None,
+                         range_x_wcs=[], range_y_wcs=[], range_z_wcs=[],
+                         x_unit=None, y_unit=None, z_unit=None,
+                         include_max_val=True):
+    """Get slice parameters in pixels for given coordinate ranges.
+
+    Parameters
+    ----------
+    header : astropy.io.fits.Header
+        Header of the FITS array.
+    wcs : astropy.wcs.wcs.WCS
+        WCS parameters of the FITS array.
+    range_x_wcs : list
+        Coordinate ranges in the x coordinate given as [xmin, xmax].
+    range_y_wcs : list
+        Coordinate ranges in the y coordinate given as [ymin, ymax].
+    range_z_wcs : list
+        Coordinate ranges in the y coordinate given as [zmin, zmax].
+    x_unit : astropy.units.quantity.Quantity
+        Unit of x coordinates (default is u.deg).
+    y_unit : astropy.units.quantity.Quantity
+        Unit of y coordinates (default is u.deg).
+    z_unit : astropy.units.quantity.Quantity
+        Unit of z coordinates (default is u.m/u.s).
+    include_max_val : bool
+        Default is 'True'. Includes the upper coordinate value in the slice parameters.
+
+    Returns
+    -------
+    slices : tuple
+        Slice parameters given in pixel values in the form (slice(zmin, zmax), slice(ymin, ymax), slice(xmin, xmax)).
+
+    """
+    if x_unit is None:
+        x_unit = u.deg
+        warnings.warn('No unit for x_unit supplied. Assuming {} for x_unit.'.format(x_unit))
+    if y_unit is None:
+        y_unit = u.deg
+        warnings.warn('No unit for y_unit supplied. Assuming {} for y_unit.'.format(y_unit))
+    if z_unit is None:
+        z_unit = u.m/u.s
+        warnings.warn('No unit for z_unit supplied. Assuming {} for z_unit.'.format(z_unit))
+
+
+    if header:
+        wcs = WCS(header)
+
+    x_wcs_min, x_wcs_max = (range_x_wcs * x_unit).to(wcs.wcs.cunit[0]).value
+    y_wcs_min, y_wcs_max = (range_y_wcs * y_unit).to(wcs.wcs.cunit[1]).value
+    z_wcs_min, z_wcs_max = (range_z_wcs * z_unit).to(wcs.wcs.cunit[2]).value
+
+    x_pix_min, y_pix_min, z_pix_min = wcs.wcs_world2pix(x_wcs_min, y_wcs_min, z_wcs_min, 0)
+    x_pix_max, y_pix_max, z_pix_max = wcs.wcs_world2pix(x_wcs_max, y_wcs_max, z_wcs_max, 0)
+
+    xmin = int(max(0, min(x_pix_min, x_pix_max)))
+    ymin = int(max(0, min(y_pix_min, y_pix_max)))
+    zmin = int(max(0, min(z_pix_min, z_pix_max)))
+
+    if include_max_val:
+        xmax = int(max(x_pix_min, x_pix_max) + 2)
+        ymax = int(max(y_pix_min, y_pix_max) + 2)
+        zmax = int(max(z_pix_min, z_pix_max) + 2)
+    else:
+        xmax = int(max(x_pix_min, x_pix_max))
+        ymax = int(max(y_pix_min, y_pix_max))
+        zmax = int(max(z_pix_min, z_pix_max))
+
+    return (slice(zmin, zmax), slice(ymin, ymax), slice(xmin, xmax))
 
 
 def get_slices(size, n):
