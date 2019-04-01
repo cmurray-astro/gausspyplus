@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: training.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T13:18:58+01:00
+# @Last modified time: 2019-04-01T14:27:56+02:00
 
 import ast
 import configparser
@@ -17,7 +17,7 @@ from gausspyplus.shared_functions import gaussian
 
 
 class GaussPyTraining(object):
-    def __init__(self, path_to_training_set, configFile=''):
+    def __init__(self, path_to_training_set, config_file=''):
         self.path_to_training_set = path_to_training_set
 
         self.two_phase_decomposition = True
@@ -39,15 +39,16 @@ class GaussPyTraining(object):
         self.n_spectra_rms = 5000
         self.n_edge_channels = 10
 
+        self.log_output = True
         self.verbose = True
         self.random_seed = 111
 
-        if configFile:
-            self.get_values_from_config_file(configFile)
+        if config_file:
+            self.get_values_from_config_file(config_file)
 
-    def get_values_from_config_file(self, configFile):
+    def get_values_from_config_file(self, config_file):
         config = configparser.ConfigParser()
-        config.read(configFile)
+        config.read(config_file)
 
         for key, value in config['training'].items():
             try:
@@ -61,8 +62,9 @@ class GaussPyTraining(object):
 
     def initialize(self):
         self.dirname = os.path.dirname(self.path_to_training_set)
+        self.gpy_dirpath = os.path.dirname(self.dirname)
         self.file = os.path.basename(self.path_to_training_set)
-        self.filename, self.fileExtension = os.path.splitext(self.file)
+        self.filename, self.file_extension = os.path.splitext(self.file)
 
         if self.snr_thresh is None:
             self.snr_thresh = self.snr
@@ -215,10 +217,14 @@ class GaussPyTraining(object):
         g.set('SNR_thresh', self.snr_thresh)
         g.set('SNR2_thresh', self.snr2_thresh)
 
+        if self.log_output:
+            log_output = {'dirname': self.gpy_dirpath, 'filename': self.filename}
+
         if self.two_phase_decomposition:
             g.set('phase', 'two')  # Set GaussPy parameters
             # Train AGD starting with initial guess for alpha
-            g.train(alpha1_initial=self.alpha1_initial, alpha2_initial=self.alpha2_initial)
+            g.train(alpha1_initial=self.alpha1_initial, alpha2_initial=self.alpha2_initial,
+                    log_output=log_output)
         else:
             g.set('phase', 'one')
-            g.train(alpha1_initial=self.alpha1_initial)
+            g.train(alpha1_initial=self.alpha1_initial, log_output=log_output)

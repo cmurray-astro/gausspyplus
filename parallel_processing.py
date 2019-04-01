@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: parallel_processing.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T12:25:38+01:00
+# @Last modified time: 2019-04-01T15:53:10+02:00
 
 """Parallelization routine.
 
@@ -20,11 +20,6 @@ from gausspyplus.spatial_fitting import SpatialFitting
 
 # ------------MULTIPROCESSING------------
 
-# # TODO: check if this is really necessary
-# def init_worker():
-#     """Worker initializer to ignore Keyboard interrupt."""
-#     signal.signal(signal.SIGINT, signal.SIG_IGN)
-
 
 def init(mp_info):
     global mp_ilist, mp_data, mp_params
@@ -36,7 +31,7 @@ def calculate_noise(i):
     xpos = mp_data[i][1]
     ypos = mp_data[i][0]
     spectrum = mp_params[0][:, ypos, xpos]
-    result = determine_noise(spectrum, maxConsecutiveChannels=mp_params[1], pad_channels=mp_params[2], idx=i, averageRms=mp_params[3])
+    result = determine_noise(spectrum, max_consecutive_channels=mp_params[1], pad_channels=mp_params[2], idx=i, average_rms=mp_params[3])
     return result
 
 

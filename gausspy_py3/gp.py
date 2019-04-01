@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: gp.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-10T21:22:12+01:00
+# @Last modified time: 2019-03-29T15:52:07+01:00
 
 import os
 import pickle
@@ -39,7 +39,8 @@ class GaussianDecomposer(object):
         ioHDF5.toHDF5(data, filename)
 
     def train(self, alpha1_initial=None, alpha2_initial=None, plot=False,
-              verbose=False, mode='conv', learning_rate=0.9, eps=0.25, MAD=0.1):
+              verbose=False, mode='conv', learning_rate=0.9, eps=0.25, MAD=0.1,
+              log_output=None):
         """Solve for optimal values of alpha1 (and alpha2) using training data."""
         if (((self.p['phase'] == 'one') and (not alpha1_initial)) or
            ((self.p['phase'] == 'two') and ((not alpha1_initial) or (not alpha1_initial)))):
@@ -61,7 +62,8 @@ class GaussianDecomposer(object):
                                    SNR2_thresh=self.p['SNR2_thresh'],
                                    plot=plot, eps=eps,
                                    verbose=verbose, mode=mode,
-                                   learning_rate=learning_rate, MAD=MAD)
+                                   learning_rate=learning_rate, MAD=MAD,
+                                   log_output=log_output)
 
     def decompose(self, xdata, ydata, edata, idx=None, signal_ranges=None,
                   noise_spike_ranges=None):

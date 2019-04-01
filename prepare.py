@@ -2,7 +2,7 @@
 # @Date:   2019-02-26T16:38:04+01:00
 # @Filename: prepare.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-19T13:48:49+01:00
+# @Last modified time: 2019-04-01T15:56:20+02:00
 
 import ast
 import configparser
@@ -17,17 +17,21 @@ from astropy import units as u
 from astropy.io import fits
 from tqdm import tqdm
 
-from gausspyplus.shared_functions import max_consecutive_channels, mask_channels, get_signal_ranges, get_noise_spike_ranges
+from gausspyplus.shared_functions import get_max_consecutive_channels, mask_channels, get_signal_ranges, get_noise_spike_ranges
 
 from gausspyplus.spectral_cube_functions import determine_noise, remove_additional_axes, calculate_average_rms_noise, add_noise, change_header, save_fits
 
-from gausspyplus.miscellaneous_functions import set_up_logger
+from gausspyplus.miscellaneous_functions import set_up_logger, check_if_all_values_are_none, check_if_value_is_none
 
 
 class GaussPyPrepare(object):
-    def __init__(self, pathToFile, gpy_dirname=None, configFile=''):
-        self.pathToFile = pathToFile
-        self.gpy_dirname = gpy_dirname
+    def __init__(self, path_to_file=None, hdu=None, filename=None,
+                 gpy_dirname=None, config_file=''):
+        self.path_to_file = path_to_file
+        self.path_to_noise_map = None
+        self.hdu = hdu
+        self.filename = filename
+        self.dirpath_gpy = gpy_dirname
 
         self.gausspy_pickle = True
         self.testing = False
@@ -36,8 +40,6 @@ class GaussPyPrepare(object):
 
         self.rms_from_data = True
         self.average_rms = None
-        #  TODO: check if this is always calculated from different spectra for
-        #  different runs
         self.n_spectra_rms = 1000
         self.p_limit = 0.025
         self.pad_channels = 5
@@ -56,12 +58,12 @@ class GaussPyPrepare(object):
         self.overwrite = True
         self.random_seed = 111
 
-        if configFile:
-            self.get_values_from_config_file(configFile)
+        if config_file:
+            self.get_values_from_config_file(config_file)
 
-    def get_values_from_config_file(self, configFile):
+    def get_values_from_config_file(self, config_file):
         config = configparser.ConfigParser()
-        config.read(configFile)
+        config.read(config_file)
 
         for key, value in config['preparation'].items():
             try:
@@ -73,29 +75,6 @@ class GaussPyPrepare(object):
                 else:
                     raise Exception('Could not parse parameter {} from config file'.format(key))
 
-    def check_settings(self):
-        if self.testing and (self.data_location is None):
-            errorMessage = \
-                """specify 'data_location' as (y, x) for 'testing'"""
-            raise Exception(errorMessage)
-
-        if self.simulation and (self.average_rms is None):
-            errorMessage = \
-                """specify 'average_rms' for 'simulation'"""
-            raise Exception(errorMessage)
-
-        if self.pickleDirname is None:
-            errorMessage = """pickleDirname is not defined"""
-            raise Exception(errorMessage)
-        if not os.path.exists(self.pickleDirname):
-            os.makedirs(self.pickleDirname)
-
-    def getting_ready(self):
-        string = 'GaussPy preparation'
-        banner = len(string) * '='
-        heading = '\n' + banner + '\n' + string + '\n' + banner
-        self.say(heading)
-
     def say(self, message):
         """Diagnostic messages."""
         if self.log_output:
@@ -103,27 +82,45 @@ class GaussPyPrepare(object):
         if self.verbose:
             print(message)
 
+    def check_settings(self):
+        text = "specify 'data_location' as (y, x) for 'testing'"
+        check_if_value_is_none(self.testing, self.data_location,
+                               'testing', 'data_location',
+                               additional_text=text)
+        check_if_value_is_none(self.simulation, self.average_rms,
+                               'simulation', 'average_rms')
+        check_if_all_values_are_none(self.path_to_file, self.hdu,
+                                     'path_to_file', 'hdu')
+        check_if_all_values_are_none(self.path_to_file, self.dirpath_gpy,
+                                     'path_to_file', 'dirpath_gpy')
+        check_if_all_values_are_none(self.path_to_file, self.filename,
+                                     'path_to_file', 'filename')
+
     def initialize(self):
-        self.parentDirname = os.path.dirname(self.pathToFile)
-        self.file = os.path.basename(self.pathToFile)
-        self.filename, self.fileExtension = os.path.splitext(self.file)
-        if self.gpy_dirname is not None:
-            self.parentDirname = self.gpy_dirname
-        self.pickleDirname = os.path.join(self.parentDirname, 'gpy_prepared')
+        if self.path_to_file is not None:
+            self.dirpath = os.path.dirname(self.path_to_file)
+            self.filename = os.path.basename(self.path_to_file)
+            self.hdu = fits.open(self.path_to_file)[0]
+
+        self.filename, self.file_extension = os.path.splitext(self.filename)
+
+        if self.dirpath_gpy is not None:
+            self.dirpath = self.dirpath_gpy
+        self.dirpath_pickle = os.path.join(self.dirpath, 'gpy_prepared')
+        if not os.path.exists(self.dirpath_pickle):
+            os.makedirs(self.dirpath_pickle)
 
         if self.log_output:
             self.logger = set_up_logger(
-                self.parentDirname, self.filename, method='g+_preparation')
-
-        hdu = fits.open(self.pathToFile)[0]
+                self.dirpath, self.filename, method='g+_preparation')
 
         if self.simulation:
             self.rms_from_data = False
-            hdu = add_noise(self.average_rms, hdu=hdu, get_hdu=True,
-                            random_seed=self.random_seed)
+            self.hdu = add_noise(self.average_rms, hdu=self.hdu, get_hdu=True,
+                                 random_seed=self.random_seed)
 
-        self.data = hdu.data
-        self.header = hdu.header
+        self.data = self.hdu.data
+        self.header = self.hdu.header
 
         self.data, self.header = remove_additional_axes(self.data, self.header)
 
@@ -131,6 +128,11 @@ class GaussPyPrepare(object):
 
         if self.average_rms is None:
             self.rms_from_data = True
+
+        self.noise_map = None
+        if self.path_to_noise_map is not None:
+            self.rms_from_data = False
+            self.noise_map = fits.getdata(self.path_to_noise_map)
 
         if self.testing:
             ypos = self.data_location[0]
@@ -145,19 +147,24 @@ class GaussPyPrepare(object):
         if self.n_channels < self.min_channels:
             self.signal_mask = False
 
-        self.maxConsecutiveChannels = max_consecutive_channels(
+        self.max_consecutive_channels = get_max_consecutive_channels(
             self.n_channels, self.p_limit)
 
         if self.rms_from_data:
             self.calculate_average_rms_from_data()
 
+    def getting_ready(self):
+        string = 'GaussPy preparation'
+        banner = len(string) * '='
+        heading = '\n' + banner + '\n' + string + '\n' + banner
+        self.say(heading)
+
     def prepare_cube(self):
-        self.initialize()
         self.check_settings()
+        self.initialize()
         self.getting_ready()
 
-        if self.gausspy_pickle:
-            self.prepare_gausspy_pickle()
+        self.prepare_gausspy_pickle()
 
     def calculate_average_rms_from_data(self):
         self.say('\ncalculating average rms from data...')
@@ -165,7 +172,7 @@ class GaussPyPrepare(object):
         self.average_rms = calculate_average_rms_noise(
             self.data.copy(), self.n_spectra_rms,
             pad_channels=self.pad_channels, random_seed=self.random_seed,
-            maxConsecutiveChannels=self.maxConsecutiveChannels)
+            max_consecutive_channels=self.max_consecutive_channels)
 
         self.say('>> calculated rms value of {:.3f} from data'.format(
                 self.average_rms))
@@ -189,8 +196,8 @@ class GaussPyPrepare(object):
         data['data_list'], data['error'], data['index'], data['location'] = (
             [] for _ in range(4))
 
-        if self.signal_mask:
-            data['signal_ranges'], data['noise_spike_ranges'] = ([] for _ in range(2))
+        # if self.signal_mask:
+        data['signal_ranges'], data['noise_spike_ranges'] = ([] for _ in range(2))
 
         import gausspyplus.parallel_processing
         gausspyplus.parallel_processing.init([locations, [self]])
@@ -216,15 +223,14 @@ class GaussPyPrepare(object):
                 # data['data_list'].append(self.data[:, ypos, xpos])
                 data['data_list'].append(spectrum)
                 data['error'].append([error])
-                if self.signal_mask:
-                    # TODO: make noise_spike_ranges independent from signal_ranges??
-                    data['signal_ranges'].append(signal_ranges)
-                    data['noise_spike_ranges'].append(noise_spike_ranges)
+                data['signal_ranges'].append(signal_ranges)
+                data['noise_spike_ranges'].append(noise_spike_ranges)
             else:
                 # TODO: rework that so that list is initialized with None values
                 # and this condition is obsolete?
                 data['data_list'].append(None)
                 data['error'].append([None])
+                # if self.signal_mask:
                 data['signal_ranges'].append(None)
                 data['noise_spike_ranges'].append(None)
 
@@ -236,11 +242,13 @@ class GaussPyPrepare(object):
         else:
             suffix = self.suffix
 
-        pathToFile = os.path.join(
-            self.pickleDirname, '{}{}.pickle'.format(self.filename, suffix))
-        pickle.dump(data, open(pathToFile, 'wb'), protocol=2)
-        print(">> for GaussPyDecompose: pathToPickleFile = '{}'".format(
-            pathToFile))
+        if self.gausspy_pickle:
+            path_to_file = os.path.join(
+                self.dirpath_pickle, '{}{}.pickle'.format(
+                    self.filename, suffix))
+            pickle.dump(data, open(path_to_file, 'wb'), protocol=2)
+            print(">> for GaussPyDecompose: pathToPickleFile = '{}'".format(
+                path_to_file))
 
     def calculate_rms_noise(self, location, idx):
         ypos, xpos = location
@@ -254,19 +262,23 @@ class GaussPyPrepare(object):
 
         #  if spectrum contains nans they will be replaced by noise values
         #  randomly sampled from the calculated rms value
-        rms = determine_noise(
-            spectrum, maxConsecutiveChannels=self.maxConsecutiveChannels,
-            pad_channels=self.pad_channels, idx=idx, averageRms=self.average_rms)
+        if self.noise_map is not None:
+            rms = self.noise_map[ypos, xpos]
+        else:
+            rms = determine_noise(
+                spectrum, max_consecutive_channels=self.max_consecutive_channels,
+                pad_channels=self.pad_channels, idx=idx, average_rms=self.average_rms)
 
-        if self.signal_mask and not np.isnan(rms):
+        if not np.isnan(rms):
             noise_spike_ranges = get_noise_spike_ranges(
                 spectrum, rms, snr_noise_spike=self.snr_noise_spike)
             if self.mask_out_ranges:
                 noise_spike_ranges += self.mask_out_ranges
-            signal_ranges = get_signal_ranges(
-                spectrum, rms, snr=self.snr, significance=self.significance, maxConsecutiveChannels=self.maxConsecutiveChannels,
-                pad_channels=self.pad_channels, min_channels=self.min_channels,
-                remove_intervals=noise_spike_ranges)
+            if self.signal_mask:
+                signal_ranges = get_signal_ranges(
+                    spectrum, rms, snr=self.snr, significance=self.significance, max_consecutive_channels=self.max_consecutive_channels,
+                    pad_channels=self.pad_channels, min_channels=self.min_channels,
+                    remove_intervals=noise_spike_ranges)
 
         return [idx, spectrum, location, rms, signal_ranges, noise_spike_ranges]
 
@@ -276,9 +288,9 @@ class GaussPyPrepare(object):
                                comments=comments)
 
         filename = "{}{}_noise_map.fits".format(self.filename, self.suffix)
-        pathToFile = os.path.join(
-            os.path.dirname(self.pickleDirname), 'gpy_maps', filename)
+        path_to_file = os.path.join(
+            os.path.dirname(self.dirpath_pickle), 'gpy_maps', filename)
 
-        save_fits(self.errors, header, pathToFile, verbose=False)
+        save_fits(self.errors, header, path_to_file, verbose=False)
         self.say("\n>> saved noise map '{}' to {}".format(
-            filename, os.path.dirname(pathToFile)))
+            filename, os.path.dirname(path_to_file)))

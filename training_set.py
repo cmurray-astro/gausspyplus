@@ -3,7 +3,7 @@
 # @Filename: training_set.py
 # @Last modified by:   riener
 
-# @Last modified time: 2019-03-19T12:10:43+01:00
+# @Last modified time: 2019-04-01T16:03:35+02:00
 
 import ast
 import configparser
@@ -23,7 +23,7 @@ from astropy.modeling import models, fitting, optimizers
 
 from tqdm import tqdm
 
-from gausspyplus.shared_functions import gaussian, determine_significance, max_consecutive_channels, get_noise_spike_ranges, get_signal_ranges, mask_channels, goodness_of_fit
+from gausspyplus.shared_functions import gaussian, determine_significance, get_max_consecutive_channels, get_noise_spike_ranges, get_signal_ranges, mask_channels, goodness_of_fit
 
 from gausspyplus.spectral_cube_functions import determine_noise, remove_additional_axes
 
@@ -79,11 +79,10 @@ def mp_func(total, use_ncpus=None):
 
 
 class GaussPyTrainingSet(object):
-    def __init__(self, pathToFile, configFile=''):
-        self.pathToFile = pathToFile
+    def __init__(self, path_to_file, config_file=''):
+        self.path_to_file = path_to_file
         self.path_to_training_set = None
 
-        self.training_set = True
         self.n_spectra = 5
         self.order = 6
         self.snr = 3
@@ -105,12 +104,12 @@ class GaussPyTrainingSet(object):
         self.use_ncpus = None
         self.random_seed = 111
 
-        if configFile:
-            self.get_values_from_config_file(configFile)
+        if config_file:
+            self.get_values_from_config_file(config_file)
 
-    def get_values_from_config_file(self, configFile):
+    def get_values_from_config_file(self, config_file):
         config = configparser.ConfigParser()
-        config.read(configFile)
+        config.read(config_file)
 
         for key, value in config['training'].items():
             try:
@@ -131,14 +130,14 @@ class GaussPyTrainingSet(object):
         if self.max_fwhm is not None:
             self.maxStddev = self.max_fwhm/2.355
 
-        self.dirname = os.path.dirname(self.pathToFile)
-        self.file = os.path.basename(self.pathToFile)
-        self.filename, self.fileExtension = os.path.splitext(self.file)
+        self.dirname = os.path.dirname(self.path_to_file)
+        self.file = os.path.basename(self.path_to_file)
+        self.filename, self.file_extension = os.path.splitext(self.file)
 
         self.header = None
 
-        if self.fileExtension == '.fits':
-            hdu = fits.open(self.pathToFile)[0]
+        if self.file_extension == '.fits':
+            hdu = fits.open(self.path_to_file)[0]
             self.data = hdu.data
             self.header = hdu.header
 
@@ -146,7 +145,7 @@ class GaussPyTrainingSet(object):
                 self.data, self.header)
             self.n_channels = self.data.shape[0]
         else:
-            with open(os.path.join(self.pathToFile), "rb") as pickle_file:
+            with open(os.path.join(self.path_to_file), "rb") as pickle_file:
                 dctData = pickle.load(pickle_file, encoding='latin1')
             self.data = dctData['data_list']
             self.n_channels = len(self.data[0])
@@ -161,12 +160,11 @@ class GaussPyTrainingSet(object):
         if self.random_seed is not None:
             random.seed(self.random_seed)
 
-        if self.training_set:
-            data = {}
+        data = {}
 
         self.mask_omit = mask_channels(self.n_channels, self.mask_out_ranges)
 
-        self.maxConsecutiveChannels = max_consecutive_channels(self.n_channels, self.p_limit)
+        self.max_consecutive_channels = get_max_consecutive_channels(self.n_channels, self.p_limit)
 
         if self.header:
             yValues = np.arange(self.data.shape[1])
@@ -217,12 +215,11 @@ class GaussPyTrainingSet(object):
         if self.header:
             data['header'] = self.header
 
-        if self.training_set:
-            if not os.path.exists(self.path_to_training_set):
-                os.makedirs(self.path_to_training_set)
-            filename = '{}{}.pickle'.format(self.filename, self.suffix)
-            pathToFile = os.path.join(self.path_to_training_set, filename)
-            pickle.dump(data, open(pathToFile, 'wb'), protocol=2)
+        if not os.path.exists(self.path_to_training_set):
+            os.makedirs(self.path_to_training_set)
+        filename = '{}{}.pickle'.format(self.filename, self.suffix)
+        path_to_file = os.path.join(self.path_to_training_set, filename)
+        pickle.dump(data, open(path_to_file, 'wb'), protocol=2)
 
     def decompose(self, index, i):
         if self.header:
@@ -237,8 +234,8 @@ class GaussPyTrainingSet(object):
             spectrum[nan_mask] = np.nan
 
         rms = determine_noise(
-            spectrum, maxConsecutiveChannels=self.maxConsecutiveChannels,
-            pad_channels=self.pad_channels, idx=index, averageRms=None)
+            spectrum, max_consecutive_channels=self.max_consecutive_channels,
+            pad_channels=self.pad_channels, idx=index, average_rms=None)
 
         if np.isnan(rms):
             return None
@@ -250,7 +247,7 @@ class GaussPyTrainingSet(object):
 
         signal_ranges = get_signal_ranges(
             spectrum, rms, snr=self.snr, significance=self.significance,
-            maxConsecutiveChannels=self.maxConsecutiveChannels,
+            max_consecutive_channels=self.max_consecutive_channels,
             pad_channels=self.pad_channels, min_channels=self.min_channels,
             remove_intervals=noise_spike_ranges)
 

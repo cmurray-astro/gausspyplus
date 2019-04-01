@@ -2,7 +2,7 @@
 # @Date:   2019-01-09T12:27:55+01:00
 # @Filename: miscellaneous_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-04T10:15:50+01:00
+# @Last modified time: 2019-04-01T15:50:08+02:00
 
 import logging
 import os
@@ -12,7 +12,48 @@ from datetime import datetime
 
 from gausspyplus.shared_functions import determine_peaks
 
-# ------------FUNCTIONS------------
+
+def check_if_value_is_none(condition, value, varname_condition, varname_value,
+                           additional_text=''):
+    """Raise error message if no value is supplied for a selected condition.
+
+    The error message is raised if the condition is 'True' and the value is 'None'.
+
+    Parameters
+    ----------
+    condition : bool
+        Selected condition.
+    value : type
+        Value for the condition.
+
+    """
+    if condition and (value is None):
+        errorMessage = str("Need to specify '{}' for '{}'=True. {}".format(
+            varname_value, varname_condition, additional_text))
+        raise Exception(errorMessage)
+
+
+def check_if_all_values_are_none(value1, value2, varname_value1, varname_value2,
+                                 additional_text=''):
+    """Raise error message if both values are 'None'.
+
+    Parameters
+    ----------
+    value1 : type
+        Description of parameter `value1`.
+    value2 : type
+        Description of parameter `value2`.
+
+    """
+    if (value1 is None) and (value2 is None):
+        errorMessage = str("Need to specify either '{}' or '{}'.".format(
+            varname_value1, varname_value2, additional_text))
+        raise Exception(errorMessage)
+
+
+def add_suffix_to_filename(filename, suffix=''):
+    filename, fileExtension = os.path.splitext(filename)
+    return "{}{}{}".format(filename, suffix, fileExtension)
 
 
 def negative_residuals(spectrum, residual, rms, neg_res_snr=3.):
@@ -26,8 +67,7 @@ def negative_residuals(spectrum, residual, rms, neg_res_snr=3.):
         offset_vals = np.where(amp_vals_position_mask == True)[0]
 
         for offset in offset_vals:
-            # TODO: should the -3*rms term be reworked?
-            if residual[offset] < (spectrum[offset] - 3*rms):
+            if residual[offset] < (spectrum[offset] - neg_res_snr*rms):
                 N_negative_residuals += 1
 
     return N_negative_residuals

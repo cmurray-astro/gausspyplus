@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:30:53+01:00
 # @Filename: gp_plus.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-17T14:25:02+01:00
+# @Last modified time: 2019-04-01T14:31:05+02:00
 
 import itertools
 import sys
@@ -137,7 +137,8 @@ def remove_components_from_sublists(lst, remove_indices):
 def check_params_fit(data, params_fit, params_errs, vel, rms, max_amp,
                      max_fwhm, snr=3., significance=5., snr_fit=3.,
                      min_fwhm=None, signal_ranges=None,
-                     params_min=None, params_max=None):
+                     params_min=None, params_max=None,
+                     exclude_means_outside_channel_range=True):
     """Perform quality checks for the fitted Gaussians components.
 
     All Gaussian components that are not satisfying the criteria are discarded from the fit.
@@ -172,6 +173,8 @@ def check_params_fit(data, params_fit, params_errs, vel, rms, max_amp,
         List of minimum limits for parameters: [min_amp1, ..., min_ampN, min_fwhm1, ..., min_fwhmN, min_mean1, ..., min_meanN]
     params_max : list
         List of maximum limits for parameters: [max_amp1, ..., max_ampN, max_fwhm1, ..., max_fwhmN, max_mean1, ..., max_meanN]
+    exclude_means_outside_channel_range : bool
+        Default is 'True'. Exclude Gaussian fit components if their mean position is outside the channel range.
 
     Returns
     -------
@@ -202,9 +205,10 @@ def check_params_fit(data, params_fit, params_errs, vel, rms, max_amp,
     for i, (amp, fwhm, offset) in enumerate(
             zip(amps_fit, fwhms_fit, offsets_fit)):
         #  discard the Gaussian component if its mean position falls outside the covered spectral channels
-        if (offset < np.min(vel)) or (offset > np.max(vel)):
-            remove_indices.append(i)
-            continue
+        if exclude_means_outside_channel_range:
+            if (offset < np.min(vel)) or (offset > np.max(vel)):
+                remove_indices.append(i)
+                continue
 
         #  discard the Gaussian component if its amplitude value does not satisfy the required minimum S/N value or is larger than the limit
         if (amp < snr_fit*rms) or (amp > max_amp):
@@ -639,13 +643,17 @@ def get_best_fit(vel, data, errors, params_fit, dct, first=False,
     params_errs = errs_vec_from_lmfit(result.params)
     ncomps_fit = number_of_components(params_fit)
 
+    exclude_means_outside_channel_range = True
+    if 'exclude_means_outside_channel_range' in dct.keys():
+        exclude_means_outside_channel_range = dct['exclude_means_outside_channel_range']
+
     #  check if fit components satisfy mandatory criteria
     if ncomps_fit > 0:
         params_fit, params_errs, ncomps_fit, params_min, params_max = check_params_fit(
             data, params_fit, params_errs, vel, errors[0], dct['max_amp'],
             dct['max_fwhm'], min_fwhm=dct['min_fwhm'], snr=dct['snr'],
             significance=dct['significance'], snr_fit=dct['snr_fit'],
-            signal_ranges=signal_ranges)
+            signal_ranges=signal_ranges, exclude_means_outside_channel_range=exclude_means_outside_channel_range)
 
         best_fit = func(vel, *params_fit).ravel()
     else:

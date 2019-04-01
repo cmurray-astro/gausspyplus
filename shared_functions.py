@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: shared_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-18T00:09:17+01:00
+# @Last modified time: 2019-04-01T15:57:54+02:00
 
 import time
 import warnings
@@ -178,7 +178,7 @@ def add_subtracted_nan_ranges(nan_ranges, ranges):
     return ranges
 
 
-def max_consecutive_channels(n_channels, p_limit):
+def get_max_consecutive_channels(n_channels, p_limit):
     """Determine the maximum number of random consecutive positive/negative channels.
 
     Calculate the number of consecutive positive or negative channels,
@@ -533,17 +533,15 @@ def check_if_intervals_contain_signal(spectrum, rms, ranges, snr=3.,
         New list of intervals [(low, upp), ...] that contain positive signal.
 
     """
-    # TODO: incorporate min_channelsSnr, rethink snr - 0.5 ?
     ranges_new = []
     for low, upp in ranges:
         if np.max(spectrum[low:upp]) > snr*rms:
-            # if sum(spectrum[low:upp] > (snr - 0.5)*rms) >= min_channelsSnr:
             if np.sum(spectrum[low:upp]) / (np.sqrt(upp - low)*rms) > significance:
                 ranges_new.append([low, upp])
     return ranges_new
 
 
-def get_signal_ranges(spectrum, rms, maxConsecutiveChannels=14,
+def get_signal_ranges(spectrum, rms, max_consecutive_channels=14,
                       pad_channels=5, snr=3., significance=5.,
                       min_channels=100, remove_intervals=None):
     """Determine ranges in the spectrum that could contain signal.
@@ -554,7 +552,7 @@ def get_signal_ranges(spectrum, rms, maxConsecutiveChannels=14,
         Array of the data values of the spectrum.
     rms : float
         Root-mean-square noise of the spectrum.
-    maxConsecutiveChannels : int
+    max_consecutive_channels : int
         Determined maximum number of consecutive positive or negative channels of a (signal?) feature before it gets masked out.
     pad_channels : int
         Number of additional channels that get masked out on both sides of an identified (signal?) feature.
@@ -622,14 +620,14 @@ def get_noise_spike_ranges(spectrum, rms, snr_noise_spike=3.5):
     return ranges.tolist()
 
 
-def correct_rms(averageRms=None, idx=None):
+def correct_rms(average_rms=None, idx=None):
     """Replace rms noise value with average rms value or mask out spectrum.
 
     Workaround for issues with bad baselines and/or insufficient continuum subtraction that render the noise computation meaningless.
 
     Parameters
     ----------
-    averageRms : float
+    average_rms : float
         Average root-mean-square noise value that is used in case the noise cannot be determined from the spectrum itself.
     idx : int
         Index of the spectrum.
@@ -642,16 +640,16 @@ def correct_rms(averageRms=None, idx=None):
     idxInfo = ''
     if idx is not None:
         idxInfo = 'with index {} '.format(idx)
-    if averageRms is not None:
-        warnings.warn('Could not determine noise for spectrum {} (baseline issue?). Assuminge average rms value of {}'.format(idxInfo, averageRms))
-        return averageRms
+    if average_rms is not None:
+        warnings.warn('Could not determine noise for spectrum {} (baseline issue?). Assuminge average rms value of {}'.format(idxInfo, average_rms))
+        return average_rms
     else:
         warnings.warn('Could not determine noise for spectrum {} (baseline issue?). Masking out spectrum.'.format(idxInfo))
         return np.nan
 
 
-def get_rms_noise(spectrum, maxConsecutiveChannels=14, pad_channels=5,
-                  averageRms=None, idx=None, min_fraction_noise_channels=0.1,
+def get_rms_noise(spectrum, max_consecutive_channels=14, pad_channels=5,
+                  average_rms=None, idx=None, min_fraction_noise_channels=0.1,
                   min_fraction_average_rms=0.1):
     """Short summary.
 
@@ -659,18 +657,18 @@ def get_rms_noise(spectrum, maxConsecutiveChannels=14, pad_channels=5,
     ----------
     spectrum : numpy.ndarray
         Original data of the spectrum.
-    maxConsecutiveChannels : int
+    max_consecutive_channels : int
         Determined maximum number of consecutive positive or negative channels of a (signal?) feature before it gets masked out.
     pad_channels : int
         Number of additional channels that get masked out on both sides of an identified (signal?) feature.
-    averageRms : float
+    average_rms : float
         Average root-mean-square noise value that is used in case the noise cannot be determined from the spectrum itself.
     idx : int
         Index of the spectrum.
     min_fraction_noise_channels : float
-        Required minimum fraction of spectral channels for reliable noise calculation. If this fraction is not reached, the 'averageRms' value (if supplied) is used or the spectrum is masked out.
+        Required minimum fraction of spectral channels for reliable noise calculation. If this fraction is not reached, the 'average_rms' value (if supplied) is used or the spectrum is masked out.
     min_fraction_average_rms : float
-        The estimated rms noise value has to exceed the average rms noise value by this fraction. Otherwise the 'averageRms' value (if supplied) is used or the spectrum is masked out.
+        The estimated rms noise value has to exceed the average rms noise value by this fraction. Otherwise the 'average_rms' value (if supplied) is used or the spectrum is masked out.
 
     Returns
     -------
@@ -681,12 +679,12 @@ def get_rms_noise(spectrum, maxConsecutiveChannels=14, pad_channels=5,
     #  Step 1: remove broad features based on number of consecutive channels
     n_channels = len(spectrum)
     consecutive_channels, ranges = determine_peaks(spectrum)
-    mask = consecutive_channels > maxConsecutiveChannels
+    mask = consecutive_channels > max_consecutive_channels
     mask_1 = mask_channels(n_channels, ranges[mask], pad_channels=pad_channels)
 
     #  use average rms value or mask out spectrum in case all spectral channels were masked out in step 1
     if np.count_nonzero(~mask_1) == 0:
-        return correct_rms(averageRms=averageRms, idx=idx)
+        return correct_rms(average_rms=average_rms, idx=idx)
 
     spectrum_consecs_removed = spectrum[~mask_1]
 
@@ -713,18 +711,18 @@ def get_rms_noise(spectrum, maxConsecutiveChannels=14, pad_channels=5,
 
     # TODO: change this from 0 to a minimum of required channels?
     if np.count_nonzero(~mask_total) == 0:
-        return correct_rms(averageRms=averageRms, idx=idx)
+        return correct_rms(average_rms=average_rms, idx=idx)
 
     #  Step 3: determine the noise from the remaining channels
     rms = np.sqrt(np.sum(spectrum[~mask_total]**2) / np.size(spectrum[~mask_total]))
 
     if np.count_nonzero(
             ~mask_total) < min_fraction_noise_channels*len(spectrum):
-        if averageRms is not None:
-            if rms < min_fraction_average_rms*averageRms:
-                return correct_rms(averageRms=averageRms, idx=idx)
+        if average_rms is not None:
+            if rms < min_fraction_average_rms*average_rms:
+                return correct_rms(average_rms=average_rms, idx=idx)
         else:
-            return correct_rms(averageRms=averageRms, idx=idx)
+            return correct_rms(average_rms=average_rms, idx=idx)
     return rms
 
 

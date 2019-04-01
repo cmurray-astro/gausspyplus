@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-19T16:52:05+01:00
+# @Last modified time: 2019-04-01T15:59:14+02:00
 
 import ast
 import collections
@@ -23,11 +23,11 @@ from gausspyplus.gausspy_py3.gp_plus import split_params, get_fully_blended_gaus
 
 
 class SpatialFitting(object):
-    def __init__(self, pathToPickleFile, pathToDecompFile, finFilename,
-                 configFile=''):
-        self.pathToPickleFile = pathToPickleFile
-        self.pathToDecompFile = pathToDecompFile
-        self.finFilename = finFilename
+    def __init__(self, path_to_pickle_file, path_to_decomp_file, fin_filename,
+                 config_file=''):
+        self.path_to_pickle_file = path_to_pickle_file
+        self.path_to_decomp_file = path_to_decomp_file
+        self.fin_filename = fin_filename
 
         self.exclude_flagged = False
         self.max_fwhm = None
@@ -62,12 +62,12 @@ class SpatialFitting(object):
         self.log_output = True
         self.only_print_flags = False
 
-        if configFile:
-            self.get_values_from_config_file(configFile)
+        if config_file:
+            self.get_values_from_config_file(config_file)
 
-    def get_values_from_config_file(self, configFile):
+    def get_values_from_config_file(self, config_file):
         config = configparser.ConfigParser()
-        config.read(configFile)
+        config.read(config_file)
 
         for key, value in config['spatial fitting'].items():
             try:
@@ -80,12 +80,12 @@ class SpatialFitting(object):
                     raise Exception('Could not parse parameter {} from config file'.format(key))
 
     def initialize(self):
-        self.dirname = os.path.dirname(self.pathToDecompFile)
-        self.file = os.path.basename(self.pathToDecompFile)
-        self.filename, self.fileExtension = os.path.splitext(self.file)
+        self.dirname = os.path.dirname(self.path_to_decomp_file)
+        self.file = os.path.basename(self.path_to_decomp_file)
+        self.filename, self.file_extension = os.path.splitext(self.file)
         self.parentDirname = os.path.dirname(self.dirname)
 
-        with open(self.pathToPickleFile, "rb") as pickle_file:
+        with open(self.path_to_pickle_file, "rb") as pickle_file:
             pickledData = pickle.load(pickle_file, encoding='latin1')
 
         self.indexList = pickledData['index']
@@ -105,7 +105,7 @@ class SpatialFitting(object):
         self.signalRanges = pickledData['signal_ranges']
         self.noiseSpikeRanges = pickledData['noise_spike_ranges']
 
-        with open(self.pathToDecompFile, "rb") as pickle_file:
+        with open(self.path_to_decomp_file, "rb") as pickle_file:
             self.decomposition = pickle.load(pickle_file, encoding='latin1')
 
         self.nIndices = len(self.decomposition['index_fit'])
@@ -521,7 +521,7 @@ class SpatialFitting(object):
 
         for i, item in enumerate(results_list):
             if not isinstance(item, list):
-                print("error:", i, item)
+                self.say("Error for spectrum with index {}: {}".format(i, item))
                 continue
 
             index, result, indices_neighbors, refit = item
@@ -662,9 +662,6 @@ class SpatialFitting(object):
         #  try getting intital guesses by grouping
         amps, means, fwhms = self.get_initial_values(indices_neighbors)
         refit = False
-        # #  TODO: check if <= 1 is correct; if amps == 1 skip to fit with individual neighbors
-        # if len(amps) <= 1:
-        #     return [index, None, indices_neighbors]
 
         for split_fwhm in [False, True]:
             dictComps = self.grouping(
@@ -1110,8 +1107,11 @@ class SpatialFitting(object):
         residual_signal_mask = dictResults['residual_signal_mask']
 
         if (aicc_new > aicc_old):
-            statistic, pvalue = normaltest(residual_signal_mask)
-            if pvalue < self.min_pvalue:
+            try:
+                statistic, pvalue = normaltest(residual_signal_mask)
+                if pvalue < self.min_pvalue:
+                    return False
+            except ValueError:
                 return False
 
         return True
@@ -1352,9 +1352,9 @@ class SpatialFitting(object):
 
     def save_final_results(self):
         pathToFile = os.path.join(
-            self.dirname, '{}.pickle'.format(self.finFilename))
+            self.dirname, '{}.pickle'.format(self.fin_filename))
         pickle.dump(self.decomposition, open(pathToFile, 'wb'), protocol=2)
-        self.say(">> saved '{}' in {}".format(self.finFilename, self.dirname))
+        self.say(">> saved '{}' in {}".format(self.fin_filename, self.dirname))
 
     def say(self, message):
         """Diagnostic messages."""

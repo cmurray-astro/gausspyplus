@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: plotting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-18T09:51:21+01:00
+# @Last modified time: 2019-04-01T15:54:43+02:00
 
 import itertools
 import os
@@ -239,7 +239,7 @@ def scale_fontsize(rowsize):
     return fontsize
 
 
-def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
+def plot_spectra(pathToDataPickle, pathToPlots, path_to_decomp_pickle=None,
                  training_set=False, cols=5, rowsize=7.75, rowbreak=50, dpi=50,
                  n_spectra=None, suffix='', subcube=False, pixel_range=None,
                  list_indices=None, gaussians=True, residual=True, signal_ranges=True, random_seed=111):
@@ -247,15 +247,15 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
     print("\nPlotting...")
 
     #  check if all necessary files are supplied
-    if (pathToDecompPickle is None) and (training_set is False):
-        errorMessage = """'pathToDecompPickle' needs to be specified for 'training_set=False'"""
+    if (path_to_decomp_pickle is None) and (training_set is False):
+        errorMessage = """'path_to_decomp_pickle' needs to be specified for 'training_set=False'"""
         raise Exception(errorMessage)
 
-    fileName, fileExtension = os.path.splitext(os.path.basename(pathToDataPickle))
+    fileName, file_extension = os.path.splitext(os.path.basename(pathToDataPickle))
 
     data = pickle_load_file(pathToDataPickle)
     if not training_set:
-        decomp = pickle_load_file(pathToDecompPickle)
+        decomp = pickle_load_file(path_to_decomp_pickle)
 
     channels, figChannels = (data['x_values'] for _ in range(2))
     n_channels = len(channels)
@@ -343,8 +343,6 @@ def plot_spectra(pathToDataPickle, pathToPlots, pathToDecompPickle=None,
                 ax.plot(figChannels, gauss, ls='solid', lw=1, color='orangered')
 
         if training_set:
-            # TODO: incorporate signal_interval here??
-            # rchi2 = goodness_of_fit(y, combined_gauss, rms, nComponents)
             rchi2 = data['best_fit_rchi2'][idx]
         else:
             rchi2 = decomp['best_fit_rchi2'][idx]

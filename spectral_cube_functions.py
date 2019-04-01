@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-25T10:20:55+01:00
+# @Last modified time: 2019-04-01T16:02:42+02:00
 
 
 import getpass
@@ -21,46 +21,37 @@ from astropy.wcs import WCS
 from datetime import datetime
 from tqdm import tqdm
 
-from gausspyplus.shared_functions import get_rms_noise, max_consecutive_channels
+from gausspyplus.miscellaneous_functions import check_if_value_is_none, check_if_all_values_are_none
+from gausspyplus.shared_functions import get_rms_noise, get_max_consecutive_channels
 
 
-def check_if_value_is_none(condition, value):
-    """Raise error message if no value is supplied for a selected condition.
+def transform_header_from_crota_to_pc(header):
+    cdelt1 = header['CDELT1']
+    cdelt2 = header['CDELT2']
 
-    The error message is raised if the condition is 'True' and the value is 'None'.
+    crota = np.radians(header['CROTA1'])
+    if crota != 0:
+        warnings.warn("Replacing 'CROTA*' with 'PC*_*' keywords in FITS header.")
+        header['PC1_1'] = np.cos(crota)
+        header['PC1_2'] = -(cdelt2 / cdelt1) * np.sin(crota)
+        header['PC2_1'] = (cdelt1 / cdelt1) * np.sin(crota)
+        header['PC2_2'] = np.cos(crota)
+    else:
+        warnings.warn("'CROTA*' keywords with value 0. present in FITS header.")
 
-    Parameters
-    ----------
-    condition : bool
-        Selected condition.
-    value : type
-        Value for the condition.
+    warnings.warn("Removing 'CROTA*' keywords from FITS header.")
+    for key in header.keys():
+        if key.startswith('CROTA'):
+            header.remove(key)
 
-    """
-    if condition and (value is None):
-        errorMessage = str("need to specify {} for {}=True".format(value, condition))
-        raise Exception(errorMessage)
-
-
-def check_if_all_values_are_none(value1, value2):
-    """Raise error message if both values are 'None'.
-
-    Parameters
-    ----------
-    value1 : type
-        Description of parameter `value1`.
-    value2 : type
-        Description of parameter `value2`.
-
-    """
-    if (value1 is None) and (value2 is None):
-        errorMessage = str("need to specify either {} or {}".format(value1, value2))
-        raise Exception(errorMessage)
+    return header
 
 
 def correct_header(header, check_keywords={'BUNIT': 'K', 'CUNIT3': 'm/s'},
                    keep_only_wcs_keywords=False):
     """Correct FITS header by checking keywords or removing unnecessary keywords.
+
+    If 'CROTA*' keywords are present they either get deleted (if their value is 0.) or they are transformed to 'PC*-*' keywords.
 
     Parameters
     ----------
@@ -81,9 +72,10 @@ def correct_header(header, check_keywords={'BUNIT': 'K', 'CUNIT3': 'm/s'},
         if keyword not in header.keys():
             warnings.warn("{a} keyword not found in header. Assuming {a}={b}".format(a=keyword, b=value))
             header[keyword] = value
-    if header['CTYPE3'] == 'VELOCITY':
-        warnings.warn("Changed header keyword CTYPE3 from VELOCITY to VELO-LSR")
-        header['CTYPE3'] = 'VELO-LSR'
+    if 'CTYPE3' in header.keys():
+        if header['CTYPE3'] == 'VELOCITY':
+            warnings.warn("Changed header keyword CTYPE3 from VELOCITY to VELO-LSR")
+            header['CTYPE3'] = 'VELO-LSR'
     if keep_only_wcs_keywords:
         wcs = WCS(header)
         dct_naxis = {}
@@ -93,6 +85,9 @@ def correct_header(header, check_keywords={'BUNIT': 'K', 'CUNIT3': 'm/s'},
         header = wcs.to_header()
         for keyword, value in dct_naxis.items():
             header[keyword] = value
+    for key in header.keys():
+        if key.startswith('CROTA'):
+            header = transform_header_from_crota_to_pc(header)
     return header
 
 
@@ -140,6 +135,34 @@ def update_header(header, comments=[], remove_keywords=[], update_keywords={},
     for comment in comments:
         header['COMMENT'] = comment
 
+    return header
+
+
+def change_wcs_header_reproject(header, header_new, ppv=True):
+    wcs_new = WCS(correct_header(header_new))
+    while wcs_new.wcs.naxis > 2:
+        axes = range(wcs_new.wcs.naxis)
+        wcs_new = wcs_new.dropaxis(axes[-1])
+    wcs_header_new = wcs_new.to_header()
+
+    header_diff = fits.HeaderDiff(header, wcs_header_new)
+
+    if ppv:
+        update_header(header, update_keywords=header_diff.diff_keyword_values,
+                      write_meta=False)
+        header['WCSAXES'] = 3
+    else:
+        wcs = WCS(correct_header(header))
+        wcs_header = wcs.to_header()
+        wcs_header_diff = fits.HeaderDiff(wcs_header, wcs_header_new)
+        update_header(header, remove_keywords=wcs_header_diff.diff_keywords[0],
+                      update_keywords=header_diff.diff_keyword_values,
+                      write_meta=False)
+        header.remove('NAXIS3')
+        header['NAXIS'] = 2
+
+    header['NAXIS1'] = header_new['NAXIS1']
+    header['NAXIS2'] = header_new['NAXIS2']
     return header
 
 
@@ -237,8 +260,8 @@ def swap_axes(data, header, new_order):
     return data, header
 
 
-def get_slice_parameters(header=None, wcs=None,
-                         range_x_wcs=[], range_y_wcs=[], range_z_wcs=[],
+def get_slice_parameters(path_to_file=None, header=None, wcs=None,
+                         range_x_wcs=[None, None], range_y_wcs=[None, None], range_z_wcs=[None, None],
                          x_unit=None, y_unit=None, z_unit=None,
                          include_max_val=True):
     """Get slice parameters in pixels for given coordinate ranges.
@@ -280,13 +303,19 @@ def get_slice_parameters(header=None, wcs=None,
         z_unit = u.m/u.s
         warnings.warn('No unit for z_unit supplied. Assuming {} for z_unit.'.format(z_unit))
 
-
-    if header:
+    if path_to_file:
+        header = correct_header(fits.getheader(path_to_file))
         wcs = WCS(header)
+    elif header:
+        wcs = WCS(correct_header(header))
 
-    x_wcs_min, x_wcs_max = (range_x_wcs * x_unit).to(wcs.wcs.cunit[0]).value
-    y_wcs_min, y_wcs_max = (range_y_wcs * y_unit).to(wcs.wcs.cunit[1]).value
-    z_wcs_min, z_wcs_max = (range_z_wcs * z_unit).to(wcs.wcs.cunit[2]).value
+    range_x = [val if val is not None else 0 for val in range_x_wcs]
+    range_y = [val if val is not None else 0 for val in range_y_wcs]
+    range_z = [val if val is not None else 0 for val in range_z_wcs]
+
+    x_wcs_min, x_wcs_max = (range_x * x_unit).to(wcs.wcs.cunit[0]).value
+    y_wcs_min, y_wcs_max = (range_y * y_unit).to(wcs.wcs.cunit[1]).value
+    z_wcs_min, z_wcs_max = (range_z * z_unit).to(wcs.wcs.cunit[2]).value
 
     x_pix_min, y_pix_min, z_pix_min = wcs.wcs_world2pix(x_wcs_min, y_wcs_min, z_wcs_min, 0)
     x_pix_max, y_pix_max, z_pix_max = wcs.wcs_world2pix(x_wcs_max, y_wcs_max, z_wcs_max, 0)
@@ -303,6 +332,13 @@ def get_slice_parameters(header=None, wcs=None,
         xmax = int(max(x_pix_min, x_pix_max))
         ymax = int(max(y_pix_min, y_pix_max))
         zmax = int(max(z_pix_min, z_pix_max))
+
+    xmin = None if range_x_wcs[0] is None else xmin
+    xmax = None if range_x_wcs[1] is None else xmax
+    ymin = None if range_y_wcs[0] is None else ymin
+    ymax = None if range_y_wcs[1] is None else ymax
+    zmin = None if range_z_wcs[0] is None else zmin
+    zmax = None if range_z_wcs[1] is None else zmax
 
     return (slice(zmin, zmax), slice(ymin, ymax), slice(xmin, xmax))
 
@@ -321,7 +357,7 @@ def get_slices(size, n):
     return slices
 
 
-def get_list_slice_params(pathToFile=None, hdu=None, ncols=1, nrows=1,
+def get_list_slice_params(path_to_file=None, hdu=None, ncols=1, nrows=1,
                           velocity_slice=slice(None, None)):
     """Calculate required slices to split a PPV cube into chosen number of subcubes.
 
@@ -329,7 +365,7 @@ def get_list_slice_params(pathToFile=None, hdu=None, ncols=1, nrows=1,
 
     Parameters
     ----------
-    pathToFile : str
+    path_to_file : str
         Filepath to the FITS cube.
     hdu : astropy.io.fits.HDUList
         Header/Data unit of the FITS cube.
@@ -346,10 +382,10 @@ def get_list_slice_params(pathToFile=None, hdu=None, ncols=1, nrows=1,
         List containing slicing parameters for all three axes ('NAXIS1', 'NAXIS2', 'NAXIS3') of the FITS cube.
 
     """
-    check_if_all_values_are_none(hdu, pathToFile)
+    check_if_all_values_are_none(hdu, path_to_file, 'hdu', 'path_to_file')
 
-    if pathToFile is not None:
-        hdu = fits.open(pathToFile)[0]
+    if path_to_file is not None:
+        hdu = fits.open(path_to_file)[0]
 
     x = hdu.header['NAXIS1']
     y = hdu.header['NAXIS2']
@@ -378,7 +414,7 @@ def get_locations(data=None, header=None):
     return list(itertools.product(yValues, xValues))
 
 
-def save_fits(data, header, pathToFile, verbose=True):
+def save_fits(data, header, path_to_file, verbose=True):
     """Save data array and header as FITS file.
 
     Parameters
@@ -387,27 +423,27 @@ def save_fits(data, header, pathToFile, verbose=True):
         Data array.
     header : astropy.io.fits.Header
         Header of the FITS array.
-    pathToFile : str
+    path_to_file : str
         Filepath to which FITS array should get saved.
     verbose : bool
         Default is 'True'. Writes message to terminal about where the FITS file was saved.
 
     """
-    if not os.path.exists(os.path.dirname(pathToFile)):
-        os.makedirs(os.path.dirname(pathToFile))
-    fits.writeto(pathToFile, data, header=header, overwrite=True)
+    if not os.path.exists(os.path.dirname(path_to_file)):
+        os.makedirs(os.path.dirname(path_to_file))
+    fits.writeto(path_to_file, data, header=header, overwrite=True)
     if verbose:
         print("\n'{}' saved in {}".format(
-            os.path.basename(pathToFile), os.path.dirname(pathToFile)))
+            os.path.basename(path_to_file), os.path.dirname(path_to_file)))
 
 
-def open_fits_file(pathToFile, get_hdu=False, get_data=True, get_header=True,
-                   remove_Stokes=True, check_wcs=True):
+def open_fits_file(path_to_file, get_hdu=False, get_data=True, get_header=True,
+                   remove_stokes=True, check_wcs=True):
     """Open a FITS file and return the HDU or data and/or header.
 
     Parameters
     ----------
-    pathToFile : str
+    path_to_file : str
         Filepath to FITS array.
     get_hdu : bool
         Default is 'False'. If set to 'True', an astropy.io.fits.HDUList is returned. Overrides 'get_data' and 'get_header'.
@@ -415,7 +451,7 @@ def open_fits_file(pathToFile, get_hdu=False, get_data=True, get_header=True,
         Default is 'True'. Returns a numpy.ndarray of the FITS array.
     get_header : bool
         Default is 'True'. Returns a astropy.io.fits.Header of the FITS array.
-    remove_Stokes : bool
+    remove_stokes : bool
         Default is 'True'. If the FITS array contains more than three axes, these additional axes are removed so that the FITS array contains only ('NAXIS1', 'NAXIS2', 'NAXIS3').
     check_wcs : bool
         Default is 'True'. Corrects the FITS header with the default settings.
@@ -425,12 +461,11 @@ def open_fits_file(pathToFile, get_hdu=False, get_data=True, get_header=True,
     astropy.io.fits.HDUList or numpy.ndarray and/or astropy.io.fits.Header.
 
     """
-    #  TODO: rework the check_wcs condition
 
-    data = fits.getdata(pathToFile)
-    header = fits.getheader(pathToFile)
+    data = fits.getdata(path_to_file)
+    header = fits.getheader(path_to_file)
 
-    if remove_Stokes:
+    if remove_stokes:
         data, header = remove_additional_axes(data, header)
 
     if check_wcs:
@@ -446,10 +481,21 @@ def open_fits_file(pathToFile, get_hdu=False, get_data=True, get_header=True,
         return data, header
 
 
-def spatial_smoothing(data, header, save=False, pathOutputFile=None,
+def reproject_data(input_data, output_projection, shape_out):
+    from reproject import reproject_interp
+
+    data_reprojected, footprint = reproject_interp(
+        input_data, output_projection, shape_out=shape_out)
+    return data_reprojected
+
+
+def spatial_smoothing(data, header, save=False, path_to_output_file=None,
                       suffix=None, current_resolution=None,
-                      target_resolution=None, verbose=True):
+                      target_resolution=None, verbose=True,
+                      reproject=False, header_projection=None):
     """Smooth a FITS cube spatially and update its header.
+
+    The data can only be smoothed to a circular beam.
 
     Parameters
     ----------
@@ -458,8 +504,8 @@ def spatial_smoothing(data, header, save=False, pathOutputFile=None,
     header : astropy.io.fits.Header
         Header of the FITS cube.
     save : bool
-        Default is 'False'. If set to 'True', the smoothed FITS cube is saved under 'pathOutputFile'.
-    pathOutputFile : str
+        Default is 'False'. If set to 'True', the smoothed FITS cube is saved under 'path_to_output_file'.
+    path_to_output_file : str
         Filepath to which smoothed FITS cube gets saved.
     suffix : str
         Suffix that gets added to the filename.
@@ -478,13 +524,17 @@ def spatial_smoothing(data, header, save=False, pathOutputFile=None,
         Updated header of the FITS cube.
 
     """
-    check_if_value_is_none(save, pathOutputFile)
-    check_if_all_values_are_none(current_resolution, target_resolution)
+    check_if_value_is_none(save, path_to_output_file, 'save', 'path_to_output_file')
+    check_if_all_values_are_none(current_resolution, target_resolution,
+                                 'current_resolution', 'target_resolution')
 
-    wcs = WCS(header)
+    header_pp = correct_header(header.copy())
+    header_pp = change_wcs_header_reproject(
+        header_pp, header_pp, ppv=False)
+    wcs_pp = WCS(header_pp)
 
     fwhm_factor = np.sqrt(8*np.log(2))
-    pixel_scale = abs(wcs.wcs.cdelt[0]) * wcs.wcs.cunit[0]
+    pixel_scale = abs(wcs_pp.wcs.cdelt[0]) * wcs_pp.wcs.cunit[0]
 
     if target_resolution is None:
         target_resolution = 2*current_resolution
@@ -494,32 +544,70 @@ def spatial_smoothing(data, header, save=False, pathOutputFile=None,
     target_resolution = target_resolution.to(u.deg)
     pixel_scale = pixel_scale.to(u.deg)
 
+    if 'BMAJ' in header.keys() and 'BMIN' in header.keys():
+        if header['BMAJ'] != header['BMIN']:
+            warnings.warn(str(
+                'BMAJ != BMIN for input FITS array. '
+                'Smoothing to circular beam with HPBW of {}'.format(
+                    target_resolution)))
+        header['BMAJ'] = target_resolution.value
+        header['BMIN'] = target_resolution.value
+
     kernel_fwhm = np.sqrt(target_resolution.value**2 -
                           current_resolution.value**2)
     kernel_std = (kernel_fwhm / fwhm_factor) / pixel_scale.value
-    # TODO: leave the kernel size optional
-    kernel = Gaussian2DKernel(kernel_std, x_size=9, y_size=9)
+    kernel = Gaussian2DKernel(kernel_std)
+
+    if reproject:
+        shape_out = (header_projection['NAXIS2'], header_projection['NAXIS1'])
+        header_projection_pp = correct_header(header_projection.copy())
+        header_projection_pp = change_wcs_header_reproject(
+            header_projection_pp, header_projection_pp, ppv=False)
+        output_projection = WCS(header_projection_pp)
 
     if data.ndim == 2:
-        data = convolve(data, kernel)
+        data = convolve(data, kernel, normalize_kernel=True)
     else:
         nSpectra = data.shape[0]
+        if reproject:
+            data_reprojected = np.zeros((data.shape[0], shape_out[0], shape_out[1]))
         for i in tqdm(range(nSpectra)):
             channel = data[i, :, :]
-            channel_smoothed = convolve(channel, kernel)
+            channel_smoothed = convolve(channel, kernel, normalize_kernel=True)
             data[i, :, :] = channel_smoothed
+            if reproject:
+                channel = data[i, :, :]
+                data_reprojected[i, :, :] = reproject_data(
+                    (channel, wcs_pp), output_projection, shape_out)
+        if reproject:
+            data = data_reprojected
+            header = change_wcs_header_reproject(header, header_projection)
 
-        comments = ['spatially smoothed to a resolution of {}'.format(
-            target_resolution)]
-        header = update_header(header, comments=comments)
+    # if reproject:
+    #     if data.ndim == 2:
+    #         data = convolve(data, kernel)
+    #     else:
+    #         nSpectra = data.shape[0]
+    #         data_reprojected = np.zeros((data.shape[0], shape_out[0], shape_out[1]))
+    #         for i in tqdm(range(nSpectra)):
+    #             channel = data[i, :, :]
+    #             data_reprojected[i, :, :] = reproject_data(
+    #                 (channel, wcs_pp), output_projection, shape_out)
+    #         data = data_reprojected
+    #
+    #     header = change_wcs_header_reproject(header, header_projection)
+
+    comments = ['spatially smoothed to a resolution of {}'.format(
+        target_resolution)]
+    header = update_header(header, comments=comments)
 
     if save:
-        save_fits(data, header, pathOutputFile, verbose=verbose)
+        save_fits(data, header, path_to_output_file, verbose=verbose)
 
     return data, header
 
 
-def spectral_smoothing(data, header, save=False, pathOutputFile=None,
+def spectral_smoothing(data, header, save=False, path_to_output_file=None,
                        suffix=None, current_resolution=None,
                        target_resolution=None, verbose=True):
     """Smooth a FITS cube spectrally and update its header.
@@ -531,8 +619,8 @@ def spectral_smoothing(data, header, save=False, pathOutputFile=None,
     header : astropy.io.fits.Header
         Header of the FITS cube.
     save : bool
-        Default is 'False'. If set to 'True', the smoothed FITS cube is saved under 'pathOutputFile'.
-    pathOutputFile : str
+        Default is 'False'. If set to 'True', the smoothed FITS cube is saved under 'path_to_output_file'.
+    path_to_output_file : str
         Filepath to which smoothed FITS cube gets saved.
     suffix : str
         Suffix that gets added to the filename.
@@ -551,7 +639,7 @@ def spectral_smoothing(data, header, save=False, pathOutputFile=None,
         Updated header of the FITS cube.
 
     """
-    check_if_value_is_none(save, pathOutputFile)
+    check_if_value_is_none(save, path_to_output_file, 'save', 'path_to_output_file')
 
     wcs = WCS(header)
     # cube = SpectralCube(data=data, wcs=wcs, header=header)
@@ -591,48 +679,48 @@ def spectral_smoothing(data, header, save=False, pathOutputFile=None,
     header = update_header(header, comments=comments)
 
     if save:
-        save_fits(data, header, pathOutputFile, verbose=verbose)
+        save_fits(data, header, path_to_output_file, verbose=verbose)
 
     return data, header
 
 
-def determine_noise(spectrum, maxConsecutiveChannels=14, pad_channels=5,
-                    idx=None, averageRms=None, random_seed=111):
+def determine_noise(spectrum, max_consecutive_channels=14, pad_channels=5,
+                    idx=None, average_rms=None, random_seed=111):
     np.random.seed(random_seed)
     if not np.isnan(spectrum).all():
         if np.isnan(spectrum).any():
             # TODO: Case where spectrum contains nans and only positive values
             nans = np.isnan(spectrum)
-            error = get_rms_noise(spectrum[~nans], maxConsecutiveChannels=maxConsecutiveChannels, pad_channels=pad_channels, idx=idx, averageRms=averageRms)
+            error = get_rms_noise(spectrum[~nans], max_consecutive_channels=max_consecutive_channels, pad_channels=pad_channels, idx=idx, average_rms=average_rms)
             spectrum[nans] = np.random.randn(len(spectrum[nans])) * error
 
         elif (spectrum >= 0).all():
             warnings.warn('Masking spectra that contain only values >= 0')
             error = np.NAN
         else:
-            error = get_rms_noise(spectrum, maxConsecutiveChannels=maxConsecutiveChannels, pad_channels=pad_channels, idx=idx, averageRms=averageRms)
+            error = get_rms_noise(spectrum, max_consecutive_channels=max_consecutive_channels, pad_channels=pad_channels, idx=idx, average_rms=average_rms)
     else:
         error = np.NAN
     return error
 
 
-def calculate_average_rms_noise(data, numberRmsSpectra, random_seed=111,
-                                maxConsecutiveChannels=14, pad_channels=5):
+def calculate_average_rms_noise(data, number_rms_spectra, random_seed=111,
+                                max_consecutive_channels=14, pad_channels=5):
     import random
 
     random.seed(random_seed)
     yValues = np.arange(data.shape[1])
     xValues = np.arange(data.shape[2])
     locations = list(itertools.product(yValues, xValues))
-    if len(locations) > numberRmsSpectra:
+    if len(locations) > number_rms_spectra:
         locations = random.sample(locations, len(locations))
     rmsList = []
     counter = 0
-    pbar = tqdm(total=numberRmsSpectra)
+    pbar = tqdm(total=number_rms_spectra)
     for y, x in locations:
         spectrum = data[:, y, x]
         error = determine_noise(
-            spectrum, maxConsecutiveChannels=maxConsecutiveChannels,
+            spectrum, max_consecutive_channels=max_consecutive_channels,
             pad_channels=pad_channels)
 
         if not np.isnan(error):
@@ -640,7 +728,7 @@ def calculate_average_rms_noise(data, numberRmsSpectra, random_seed=111,
             counter += 1
             pbar.update(1)
 
-        if counter >= numberRmsSpectra:
+        if counter >= number_rms_spectra:
             break
 
     pbar.close()
@@ -648,30 +736,30 @@ def calculate_average_rms_noise(data, numberRmsSpectra, random_seed=111,
     # return np.nanmedian(rmsList), median_absolute_deviation(rmsList, ignore_nan=True)
 
 
-def get_path_to_output_file(pathToInputFile, suffix='_',
+def get_path_to_output_file(path_to_file, suffix='_',
                             filename='foo.fits'):
-    if pathToInputFile is None:
-        pathToOutputFile = os.path.join(os.getcwd(), filename)
+    if path_to_file is None:
+        path_to_output_file = os.path.join(os.getcwd(), filename)
     else:
-        dirname = os.path.dirname(pathToInputFile)
-        filename = os.path.basename(pathToInputFile)
-        fileBase, fileExtension = os.path.splitext(pathToInputFile)
+        dirname = os.path.dirname(path_to_file)
+        filename = os.path.basename(path_to_file)
+        fileBase, fileExtension = os.path.splitext(path_to_file)
         filename = '{}{}{}'.format(fileBase, suffix, fileExtension)
-        pathToOutputFile = os.path.join(dirname, filename)
-    return pathToOutputFile
+        path_to_output_file = os.path.join(dirname, filename)
+    return path_to_output_file
 
 
-def add_noise(average_rms, pathToInputFile=None, hdu=None, save=False,
-              overwrite=True, pathToOutputFile=None, get_hdu=False,
+def add_noise(average_rms, path_to_file=None, hdu=None, save=False,
+              overwrite=True, path_to_output_file=None, get_hdu=False,
               get_data=True, get_header=True, random_seed=111):
     print('\nadding noise (rms = {}) to data...'.format(average_rms))
 
-    check_if_all_values_are_none(hdu, pathToInputFile)
+    check_if_all_values_are_none(hdu, path_to_file, 'hdu', 'path_to_file')
 
     np.random.seed(random_seed)
 
-    if pathToInputFile is not None:
-        hdu = fits.open(pathToInputFile)[0]
+    if path_to_file is not None:
+        hdu = fits.open(path_to_file)[0]
 
     data = hdu.data
     header = hdu.header
@@ -687,10 +775,10 @@ def add_noise(average_rms, pathToInputFile=None, hdu=None, save=False,
             average_rms, datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S'))
 
     if save:
-        if pathToOutputFile is None:
-            pathToOutputFile = get_path_to_output_file(pathToInputFile, suffix='_w_noise', filename='cube_w_noise.fits')
+        if path_to_output_file is None:
+            path_to_output_file = get_path_to_output_file(path_to_file, suffix='_w_noise', filename='cube_w_noise.fits')
 
-        save_fits(data, header, pathToOutputFile, verbose=True)
+        save_fits(data, header, path_to_output_file, verbose=True)
 
     if get_hdu:
         return fits.PrimaryHDU(data, header)
@@ -719,47 +807,26 @@ def transform_coordinates_to_pixel(coordinates, header):
     return [max(int(x), 0), max(int(y), 0), max(0, int(z))]
 
 
-def transform_header_from_crota_to_pc(header):
-    cdelt1 = header['CDELT1']
-    cdelt2 = header['CDELT2']
-    crota = np.radians(header['CROTA1'])
-    header['PC1_1'] = np.cos(crota)
-    header['PC1_2'] = -(cdelt2 / cdelt1) * np.sin(crota)
-    header['PC2_1'] = (cdelt1 / cdelt1) * np.sin(crota)
-    header['PC2_2'] = np.cos(crota)
-
-    return header
-
-
-def make_subcube(sliceParams, pathToInputFile=None, hdu=None, dtype='float32',
-                 save=False, overwrite=True, pathToOutputFile=None,
+def make_subcube(slice_params, path_to_file=None, hdu=None, dtype='float32',
+                 save=False, overwrite=True, path_to_output_file=None,
                  get_hdu=False, get_data=True, get_header=True):
     print('\nmaking subcube with the slice parameters {}...'.format(
-        sliceParams))
+        slice_params))
 
-    check_if_all_values_are_none(hdu, pathToInputFile)
+    check_if_all_values_are_none(hdu, path_to_file, 'hdu', 'path_to_file')
 
-    if pathToInputFile is not None:
-        hdu = fits.open(pathToInputFile)[0]
-
-    # TODO: remove next line and use sliceParams directly?
-    sliceZ, sliceY, sliceX = sliceParams
+    if path_to_file is not None:
+        hdu = fits.open(path_to_file)[0]
 
     data = hdu.data
     header = hdu.header
-    # header = transform_header_from_crota_to_pc(header)
-    # for key in list(header.keys()):
-    #     if key.startswith('PC'):
-    #         print(key, header[key])
 
-    data = data[sliceZ, sliceY, sliceX]
+    data = data[slice_params[0], slice_params[1], slice_params[2]]
     data = data.astype(dtype)
-    wcs = WCS(header)
-    wcs_cropped = wcs[sliceZ, sliceY, sliceX]
+    wcs = WCS(correct_header(header))
+    wcs_cropped = wcs[slice_params[0], slice_params[1], slice_params[2]]
     header.update(wcs_cropped.to_header())
-    for key in ['CUNIT1', 'CUNIT2', 'CUNIT3']:
-        if key in list(header.keys()):
-            header.remove(key)
+
     header['NAXIS1'] = data.shape[2]
     header['NAXIS2'] = data.shape[1]
     header['NAXIS3'] = data.shape[0]
@@ -767,10 +834,11 @@ def make_subcube(sliceParams, pathToInputFile=None, hdu=None, dtype='float32',
             datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S'))
 
     if save:
-        if pathToOutputFile is None:
-            pathToOutputFile = get_path_to_output_file(pathToInputFile, suffix='_sub', filename='subcube.fits')
+        if path_to_output_file is None:
+            path_to_output_file = get_path_to_output_file(
+                path_to_file, suffix='_sub', filename='subcube.fits')
 
-        save_fits(data, header, pathToOutputFile, verbose=True)
+        save_fits(data, header, path_to_output_file, verbose=True)
 
     if get_hdu:
         return fits.PrimaryHDU(data, header)
@@ -782,9 +850,9 @@ def make_subcube(sliceParams, pathToInputFile=None, hdu=None, dtype='float32',
         return data, header
 
 
-def apply_noise_threshold(data, snr=3, pathToNoiseMap=None,
-                          sliceParams=(slice(None), slice(None)),
-                          p_limit=0.025, pad_channels=5, use_ncpus=None):
+def clip_noise_below_threshold(data, snr=3, path_to_noise_map=None,
+                               slice_params=(slice(None), slice(None)),
+                               p_limit=0.025, pad_channels=5, use_ncpus=None):
     """"""
     yMax = data.shape[1]
     xMax = data.shape[2]
@@ -792,19 +860,19 @@ def apply_noise_threshold(data, snr=3, pathToNoiseMap=None,
     locations = list(
             itertools.product(range(yMax), range(xMax)))
 
-    if pathToNoiseMap is not None:
+    if path_to_noise_map is not None:
         print('\nusing supplied noise map to apply noise threshold '
               'with snr={}...'.format(snr))
         noiseMap = open_fits_file(
-            pathToNoiseMap, get_header=False, remove_Stokes=False, check_wcs=False)
-        noiseMap = noiseMap[sliceParams]
+            path_to_noise_map, get_header=False, remove_stokes=False, check_wcs=False)
+        noiseMap = noiseMap[slice_params]
     else:
         print('\napplying noise threshold to data with snr={}...'.format(snr))
         noiseMap = np.zeros((yMax, xMax))
-        maxConsecutiveChannels = max_consecutive_channels(n_channels, p_limit)
+        max_consecutive_channels = get_max_consecutive_channels(n_channels, p_limit)
 
         import gausspyplus.parallel_processing
-        gausspyplus.parallel_processing.init([locations, determine_noise, [data, maxConsecutiveChannels, pad_channels]])
+        gausspyplus.parallel_processing.init([locations, determine_noise, [data, max_consecutive_channels, pad_channels]])
 
         results_list = gausspyplus.parallel_processing.func(use_ncpus=use_ncpus, function='noise')
 
@@ -910,19 +978,19 @@ def get_moment_map(data, header, order=0, linewidth='sigma', vel_unit=u.km/u.s):
 
     for y, x in locations:
         spectrum = data[:, y, x]
-        nanmask = np.logical_not(np.isnan(spectrum))
+        nan_mask = np.logical_not(np.isnan(spectrum))
 
         if order == 0:
             moment_0 = velocity_bin * np.nansum(spectrum)
             moment_data[y, x] = moment_0
             bunit = u.Unit(header['BUNIT'])
         if order == 1 or order == 2:
-            moment_1 = np.nansum(spectral_channels[nanmask]) * spectrum[nanmask]
+            moment_1 = np.nansum(spectral_channels[nan_mask]) * spectrum[nan_mask]
             moment_data[y, x] = moment_1
         if order == 2:
             numerator = np.nansum(
-                (spectral_channels[nanmask] - moment_1)**2 * spectrum[nanmask])
-            denominator = np.nansum(spectrum[nanmask])
+                (spectral_channels[nan_mask] - moment_1)**2 * spectrum[nan_mask])
+            denominator = np.nansum(spectrum[nan_mask])
             moment_2 = np.sqrt(numerator / denominator)
             moment_data[y, x] = moment_2
 
@@ -933,13 +1001,13 @@ def get_moment_map(data, header, order=0, linewidth='sigma', vel_unit=u.km/u.s):
     return fits.PrimaryHDU(moment_data, header)
 
 
-def moment_map(hdu=None, pathToInputFile=None, sliceParams=None,
-               pathToOutputFile=None,
-               applyNoiseThreshold=False, snr=3, order=0, linewidth='sigma',
+def moment_map(hdu=None, path_to_file=None, slice_params=None,
+               path_to_output_file=None,
+               apply_noise_threshold=False, snr=3, order=0, linewidth='sigma',
                p_limit=0.025, pad_channels=5,
-               vel_unit=u.km/u.s, pathToNoiseMap=None,
+               vel_unit=u.km/u.s, path_to_noise_map=None,
                save=False, get_hdu=True, use_ncpus=None,
-               restoreNans=False, nanMask=None):
+               restore_nans=False, nan_mask=None):
     """
     Previously called 'make_moment_fits'
     """
@@ -947,37 +1015,37 @@ def moment_map(hdu=None, pathToInputFile=None, sliceParams=None,
 
     print('\ncreate a moment{} fits file from the cube'.format(order))
 
-    check_if_value_is_none(restoreNans, nanMask)
-    check_if_all_values_are_none(hdu, pathToInputFile)
+    check_if_value_is_none(restore_nans, nan_mask, 'restore_nans', 'nan_mask')
+    check_if_all_values_are_none(hdu, path_to_file, 'hdu', 'path_to_file')
 
     if hdu is None:
-        hdu = open_fits_file(pathToInputFile, get_hdu=True)
+        hdu = open_fits_file(path_to_file, get_hdu=True)
 
-    if sliceParams is not None:
-        hdu = make_subcube(sliceParams, hdu=hdu, get_hdu=True)
-        sliceParams = (sliceParams[1], sliceParams[2])
+    if slice_params is not None:
+        hdu = make_subcube(slice_params, hdu=hdu, get_hdu=True)
+        slice_params = (slice_params[1], slice_params[2])
     else:
-        sliceParams = (slice(None), slice(None))
+        slice_params = (slice(None), slice(None))
 
     data = hdu.data
     header = hdu.header
     # wcs = WCS(header)
 
-    if applyNoiseThreshold:
-        data = apply_noise_threshold(data, snr=snr, sliceParams=sliceParams,
-                                     pathToNoiseMap=pathToNoiseMap,
-                                     p_limit=p_limit, pad_channels=pad_channels,
-                                     use_ncpus=use_ncpus)
+    if apply_noise_threshold:
+        data = clip_noise_below_threshold(data, snr=snr, slice_params=slice_params,
+                                          path_to_noise_map=path_to_noise_map,
+                                          p_limit=p_limit, pad_channels=pad_channels,
+                                          use_ncpus=use_ncpus)
 
     hdu = get_moment_map(data, header, order=order, linewidth=linewidth,
                          vel_unit=vel_unit)
 
-    if restoreNans:
+    if restore_nans:
         locations = list(
             itertools.product(
                 range(hdu.data.shape[0]), range(hdu.data.shape[1])))
         for ypos, xpos in locations:
-            if nanMask[ypos, xpos]:
+            if nan_mask[ypos, xpos]:
                 hdu.data[ypos, xpos] = np.nan
 
     if save:
@@ -985,18 +1053,18 @@ def moment_map(hdu=None, pathToInputFile=None, sliceParams=None,
             suffix = 'mom2_map_{}'.format(linewidth)
         else:
             suffix = 'mom{}_map'.format(order)
-        if pathToOutputFile is None:
-            pathToOutputFile = get_path_to_output_file(
-                pathToInputFile, suffix=suffix,
+        if path_to_output_file is None:
+            path_to_output_file = get_path_to_output_file(
+                path_to_file, suffix=suffix,
                 filename='moment{}_map.fits'.format(order))
 
-        save_fits(hdu.data, hdu.header, pathToOutputFile, verbose=True)
+        save_fits(hdu.data, hdu.header, path_to_output_file, verbose=True)
 
     if get_hdu:
         return hdu
 
 
-def get_pv_map(data, header, sum_over_axis=1, vel_unit=u.km/u.s):
+def get_pv_map(data, header, sum_over_axis=1, slice_z=slice(None, None), vel_unit=u.km/u.s):
     """"""
     wcs = WCS(header)
     if wcs.wcs.cunit[2] == '':
@@ -1008,7 +1076,7 @@ def get_pv_map(data, header, sum_over_axis=1, vel_unit=u.km/u.s):
     wcs.wcs.crval[2] *= factor
     header.update(wcs.to_header())
 
-    data = np.nansum(data, sum_over_axis)
+    data = np.nansum(data[slice_z, :, :], sum_over_axis)
 
     if sum_over_axis == 1:
         keep_axis = '1'
@@ -1022,66 +1090,67 @@ def get_pv_map(data, header, sum_over_axis=1, vel_unit=u.km/u.s):
     return hdu
 
 
-def pv_map(pathToInputFile=None, hdu=None, sliceParams=None,
-           pathToOutputFile=None, pathToNoiseMap=None,
-           applyNoiseThreshold=False, snr=3, p_limit=0.025, pad_channels=5,
-           sumOverLatitude=True, vel_unit=u.km/u.s,
+def pv_map(path_to_file=None, hdu=None, slice_params=None,
+           path_to_output_file=None, path_to_noise_map=None,
+           apply_noise_threshold=False, snr=3, p_limit=0.025, pad_channels=5,
+           sum_over_latitude=True, vel_unit=u.km/u.s,
            save=False, get_hdu=True, use_ncpus=None):
     """
     Previously called 'make_pv_fits'
     """
     print('\ncreate a PV fits file from the cube')
 
-    check_if_all_values_are_none(hdu, pathToInputFile)
+    check_if_all_values_are_none(hdu, path_to_file, 'hdu', 'path_to_file')
 
     if hdu is None:
-        hdu = open_fits_file(pathToInputFile, get_hdu=True)
+        hdu = open_fits_file(path_to_file, get_hdu=True)
 
-    if sliceParams is not None:
-        data, header = make_subcube(sliceParams, hdu=hdu)
-        sliceParams = (sliceParams[1], sliceParams[2])
+    if slice_params is not None:
+        data, header = make_subcube(slice_params, hdu=hdu)
+        slice_params_pp = (slice_params[1], slice_params[2])
     else:
-        sliceParams = (slice(None), slice(None))
+        slice_params_pp = (slice(None), slice(None))
 
     data = hdu.data
     header = hdu.header
 
-    if applyNoiseThreshold:
-        data = apply_noise_threshold(data, snr=snr, sliceParams=sliceParams,
-                                     pathToNoiseMap=pathToNoiseMap,
-                                     p_limit=p_limit, pad_channels=pad_channels,
-                                     use_ncpus=use_ncpus)
+    if apply_noise_threshold:
+        data = clip_noise_below_threshold(
+            data, snr=snr, slice_params=slice_params_pp,
+            path_to_noise_map=path_to_noise_map, p_limit=p_limit,
+            pad_channels=pad_channels, use_ncpus=use_ncpus)
 
     wcs = WCS(header)
     #  have to reverse the axis since we change between FITS and np standards
-    if sumOverLatitude:
+    if sum_over_latitude:
         sum_over_axis = wcs.wcs.naxis - wcs.wcs.lat - 1
     else:
         sum_over_axis = wcs.wcs.naxis - wcs.wcs.lng - 1
 
-    hdu = get_pv_map(data, header, sum_over_axis=sum_over_axis, vel_unit=vel_unit)
+    hdu = get_pv_map(data, header, sum_over_axis=sum_over_axis,
+                     slice_z=slice_params[0], vel_unit=vel_unit)
     data = hdu.data
     header = hdu.header
 
     if save:
-        if pathToOutputFile is None:
-            pathToOutputFile = get_path_to_output_file(pathToInputFile, suffix='_pv', filename='pv_map.fits')
+        if path_to_output_file is None:
+            path_to_output_file = get_path_to_output_file(path_to_file, suffix='_pv', filename='pv_map.fits')
 
-        save_fits(hdu.data, hdu.header, pathToOutputFile, verbose=True)
+        save_fits(hdu.data, hdu.header, path_to_output_file, verbose=True)
 
     if get_hdu:
         return hdu
 
 
-def combine_fields(listPathToFields=[], ncols=3, nrows=2, save=False,
-                   header=None, pathOutputFile=None, comments=[], verbose=True):
+def combine_fields(list_path_to_fields=[], ncols=3, nrows=2, save=False,
+                   header=None, path_to_output_file=None, comments=[], verbose=True):
     """Combine FITS files to a mosaic by stacking them in the spatial coordinates.
 
     This will only yield a correct combined mosaic if the original mosaic was split in a similar way as obtained by the get_list_slice_params method
 
     Parameters
     ----------
-    listPathToFields : list
+    list_path_to_fields : list
         List of filepaths to the fields that should be mosaicked together.
     ncols : int
         Number of fields in the X direction.
@@ -1091,7 +1160,7 @@ def combine_fields(listPathToFields=[], ncols=3, nrows=2, save=False,
         Set to 'True' if the resulting mosaicked file should be saved.
     header : astropy.io.fits.header.Header
         FITS header that will be used for the combined mosaic.
-    pathOutputFile : str
+    path_to_output_file : str
         Filepath to which the combined mosaic gets saved if 'save' is set to 'True'.
     comment : str
         Comment that will be written in the FITS header of the combined mosaic.
@@ -1106,27 +1175,27 @@ def combine_fields(listPathToFields=[], ncols=3, nrows=2, save=False,
         FITS header of the combined mosaic.
 
     """
-    check_if_value_is_none(save, pathOutputFile)
+    check_if_value_is_none(save, path_to_output_file, 'save', 'path_to_output_file')
 
     combined_rows = []
 
     first = True
-    for i, pathToFile in enumerate(listPathToFields):
+    for i, path_to_file in enumerate(list_path_to_fields):
         if first:
             combined_row = open_fits_file(
-                pathToFile=pathToFile, get_header=False, check_wcs=False)
+                path_to_file=path_to_file, get_header=False, check_wcs=False)
             axes = range(combined_row.ndim)
             axis_1 = axes[-1]
             axis_2 = axes[-2]
             first = False
         else:
             data = open_fits_file(
-                pathToFile=pathToFile, get_header=False, check_wcs=False)
+                path_to_file=path_to_file, get_header=False, check_wcs=False)
             combined_row = np.concatenate((combined_row, data), axis=axis_1)
 
         if i == 0 and header is None:
             header = open_fits_file(
-                pathToFile=pathToFile, get_data=False, check_wcs=False)
+                path_to_file=path_to_file, get_data=False, check_wcs=False)
         elif (i + 1) % ncols == 0:
             combined_rows.append(combined_row)
             first = True
@@ -1143,6 +1212,21 @@ def combine_fields(listPathToFields=[], ncols=3, nrows=2, save=False,
         header = update_header(header, comments=comments)
 
     if save:
-        save_fits(data_combined, header, pathOutputFile, verbose=verbose)
+        save_fits(data_combined, header, path_to_output_file, verbose=verbose)
 
     return data, header
+
+
+def get_center_coordinates_for_swarp(header):
+    from astropy.wcs import WCS
+
+    wcs = WCS(header)
+
+    x_wcs_min, y_wcs_min, z_wcs_min = wcs.wcs_pix2world(0, 0, 0, 0)
+    x_wcs_max, y_wcs_max, z_wcs_max = wcs.wcs_pix2world(
+        header['NAXIS1'] - 1, header['NAXIS2'] - 1, 0, 0)
+
+    x_wcs_ctr = (x_wcs_min + x_wcs_max) / 2
+    y_wcs_ctr = (y_wcs_min + y_wcs_max) / 2
+
+    return x_wcs_ctr, y_wcs_ctr

@@ -2,7 +2,7 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-18T13:44:44+01:00
+# @Last modified time: 2019-04-01T15:49:33+02:00
 
 from __future__ import print_function
 
@@ -16,9 +16,7 @@ import warnings
 
 import numpy as np
 
-# from datetime import datetime
 from astropy import units as u
-# from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs import WCS
 
@@ -26,16 +24,13 @@ from gausspyplus.shared_functions import gaussian, area_of_gaussian, combined_ga
 from gausspyplus.spectral_cube_functions import change_header, save_fits, correct_header, update_header
 from gausspyplus.miscellaneous_functions import set_up_logger
 
-# if (sys.version_info >= (3, 0)):
-#     raise Exception('Script has to be run in Python 2 environment.')
-
 
 class GaussPyDecompose(object):
     """Wrapper for decomposition with GaussPy+.
 
     Parameters
     ----------
-    pathToPickleFile : str
+    path_to_pickle_file : str
         Filepath to the pickled dictionary produced by GaussPyPrepare.
 
     Attributes
@@ -46,18 +41,16 @@ class GaussPyDecompose(object):
         Filename and extension of the pickled dictionary produced by GaussPyPrepare.
     filename : str
         Filename of the pickled dictionary produced by GaussPyPrepare.
-    fileExtension : str
+    file_extension : str
         Extension of the pickled dictionary produced by GaussPyPrepare.
     decomp_dirname : str
         Path to directory in which decomposition results are saved.
-    parentDirname : str
+    parent_dirname : str
         Parent directory of 'gpy_prepared'.
     gausspy_decomposition : bool
         'True' if data should be decomposed. 'False' if decomposition results are loaded.
     two_phase_decomposition : bool
         'True' (default) uses two smoothing parameters (alpha1, alpha2) for the decomposition. 'False' uses only the alpha1 smoothing parameter.
-    training_set : bool
-        Default is 'False'. Set to 'True' if training set is decomposed.
     save_initial_guesses : bool
         Default is 'False'. Set to 'True' if initial GaussPy fitting guesses should be saved.
     alpha1 : float
@@ -87,17 +80,16 @@ class GaussPyDecompose(object):
     log_output : bool
         Default is 'True'. Set to 'False' if terminal output should not be logged.
     """
-    def __init__(self, pathToPickleFile, configFile=''):
-        self.pathToPickleFile = pathToPickleFile
-        self.dirname = os.path.dirname(pathToPickleFile)
-        self.file = os.path.basename(pathToPickleFile)
-        self.filename, self.fileExtension = os.path.splitext(self.file)
+    def __init__(self, path_to_pickle_file, config_file=''):
+        self.path_to_pickle_file = path_to_pickle_file
+        self.dirname = os.path.dirname(path_to_pickle_file)
+        self.file = os.path.basename(path_to_pickle_file)
+        self.filename, self.file_extension = os.path.splitext(self.file)
         self.decomp_dirname = None
-        self.parentDirname = os.path.dirname(self.dirname)
+        self.parent_dirname = os.path.dirname(self.dirname)
 
         self.gausspy_decomposition = True
         self.two_phase_decomposition = True
-        self.training_set = False
         self.save_initial_guesses = False
         self.alpha1 = None
         self.alpha2 = None
@@ -105,6 +97,7 @@ class GaussPyDecompose(object):
         self.snr2_thresh = None
 
         self.improve_fitting = True
+        self.exclude_means_outside_channel_range = True
         self.min_fwhm = 1.
         self.max_fwhm = None
         self.snr = 3.
@@ -127,12 +120,12 @@ class GaussPyDecompose(object):
         self.log_output = True
         self.use_ncpus = None
 
-        if configFile:
-            self.get_values_from_config_file(configFile)
+        if config_file:
+            self.get_values_from_config_file(config_file)
 
-    def get_values_from_config_file(self, configFile):
+    def get_values_from_config_file(self, config_file):
         config = configparser.ConfigParser()
-        config.read(configFile)
+        config.read(config_file)
 
         for key, value in config['decomposition'].items():
             try:
@@ -144,37 +137,10 @@ class GaussPyDecompose(object):
                 else:
                     raise Exception('Could not parse parameter {} from config file'.format(key))
 
-    # def set_up_logger(self):
-    #     #  setting up logger
-    #     now = datetime.now()
-    #     date_string = "{}{}{}-{}{}{}".format(
-    #         now.year,
-    #         str(now.month).zfill(2),
-    #         str(now.day).zfill(2),
-    #         str(now.hour).zfill(2),
-    #         str(now.minute).zfill(2),
-    #         str(now.second).zfill(2))
-    #
-    #     dirname = os.path.join(self.parentDirname, 'gpy_log')
-    #     if not os.path.exists(dirname):
-    #         os.makedirs(dirname)
-    #     filename = os.path.splitext(os.path.basename(self.filename))[0]
-    #
-    #     logname = os.path.join(dirname, '{}_decompose_{}.log'.format(
-    #         date_string, filename))
-    #     logging.basicConfig(filename=logname,
-    #                         filemode='a',
-    #                         format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-    #                         datefmt='%H:%M:%S',
-    #                         level=logging.DEBUG)
-    #
-    #     self.logger = logging.getLogger(__name__)
-
     def getting_ready(self):
         if self.log_output:
             self.logger = set_up_logger(
-                self.parentDirname, self.filename, method='g+_decomposition')
-            # self.set_up_logger()
+                self.parent_dirname, self.filename, method='g+_decomposition')
 
         string = 'GaussPy decomposition'
         banner = len(string) * '='
@@ -193,15 +159,16 @@ class GaussPyDecompose(object):
         self.getting_ready()
 
         self.fitting = {
-            'improve_fitting': self.improve_fitting, 'min_fwhm': self.min_fwhm, 'max_fwhm': self.max_fwhm, 'snr': self.snr, 'snr_fit': self.snr_fit, 'significance': self.significance, 'snr_negative': self.snr_negative, 'rchi2_limit': self.rchi2_limit, 'max_amp_factor': self.max_amp_factor, 'negative_residual': self.refit_residual, 'broad': self.refit_broad, 'blended': self.refit_blended, 'fwhm_factor': self.fwhm_factor,
-            'separation_factor': self.separation_factor}
+            'improve_fitting': self.improve_fitting, 'min_fwhm': self.min_fwhm, 'max_fwhm': self.max_fwhm, 'snr': self.snr, 'snr_fit': self.snr_fit, 'significance': self.significance, 'snr_negative': self.snr_negative, 'rchi2_limit': self.rchi2_limit, 'max_amp_factor': self.max_amp_factor, 'negative_residual': self.refit_residual,
+            'broad': self.refit_broad, 'blended': self.refit_blended, 'fwhm_factor': self.fwhm_factor,
+            'separation_factor': self.separation_factor,
+            'exclude_means_outside_channel_range': self.exclude_means_outside_channel_range}
 
         self.say("\npickle load '{}'...".format(self.file))
 
-        with open(self.pathToPickleFile, "rb") as pickle_file:
+        with open(self.path_to_pickle_file, "rb") as pickle_file:
             self.pickledData = pickle.load(pickle_file, encoding='latin1')
 
-        # TODO: check what consequences it has if one of those keywords is missing
         if 'header' in self.pickledData.keys():
             self.header = correct_header(self.pickledData['header'])
             self.wcs = WCS(self.header)
@@ -236,25 +203,10 @@ class GaussPyDecompose(object):
         if self.snr2_thresh is None:
             self.snr2_thresh = self.snr
 
-        if self.gausspy_decomposition and (self.alpha1 is None or
-                                           self.snr_thresh is None or
-                                           self.snr2_thresh is None):
-            errorMessage = \
-                """gausspy_decomposition needs alpha1, snr_thresh and
-                snr2_thresh values"""
-            raise Exception(errorMessage)
-
-        if self.gausspy_decomposition and self.two_phase_decomposition and \
-                (self.alpha2 is None):
-                    errorMessage = \
-                        """two_phase_decomposition needs alpha2 value"""
-                    raise Exception(errorMessage)
-
         if self.main_beam_efficiency is None:
-            warnings.warn('assuming intensities are already corrected for  main beam efficiency')
+            warnings.warn('assuming intensities are already corrected for main beam efficiency')
 
-        warnings.warn("converting velocity values to {}".format(
-            self.vel_unit))
+        warnings.warn("converting velocity values to {}".format(self.vel_unit))
 
     def decompose(self):
         self.initialize_data()
@@ -280,7 +232,6 @@ class GaussPyDecompose(object):
 
         string_gausspy_plus = ''
         if self.fitting['improve_fitting']:
-            #  TODO: change to items() in Python 3
             for key, value in self.fitting.items():
                 string_gausspy_plus += str('\n{}: {}').format(key, value)
         else:
@@ -290,6 +241,20 @@ class GaussPyDecompose(object):
         self.say(string_gausspy_plus)
 
     def gaussPy_decomposition(self):
+        if self.gausspy_decomposition and (self.alpha1 is None or
+                                           self.snr_thresh is None or
+                                           self.snr2_thresh is None):
+            errorMessage = \
+                """gausspy_decomposition needs alpha1, snr_thresh and
+                snr2_thresh values"""
+            raise Exception(errorMessage)
+
+        if self.gausspy_decomposition and self.two_phase_decomposition and \
+                (self.alpha2 is None):
+                    errorMessage = \
+                        """two_phase_decomposition needs alpha2 value"""
+                    raise Exception(errorMessage)
+
         self.decomposition_settings()
         self.say('\ndecomposing data...')
 
@@ -301,10 +266,9 @@ class GaussPyDecompose(object):
         g.set('improve_fitting_dict', self.fitting)
         g.set('alpha1', self.alpha1)
 
-        if not self.training_set:
-            if self.testing:
-                g.set('verbose', True)
-                g.set('plot', True)
+        if self.testing:
+            g.set('verbose', True)
+            g.set('plot', True)
 
         if self.two_phase_decomposition:
             g.set('phase', 'two')
@@ -312,7 +276,7 @@ class GaussPyDecompose(object):
         else:
             g.set('phase', 'one')
 
-        self.decomposition = g.batch_decomposition(self.pathToPickleFile)
+        self.decomposition = g.batch_decomposition(self.path_to_pickle_file)
 
         self.save_final_results()
 
@@ -355,7 +319,6 @@ class GaussPyDecompose(object):
 
         dct_final_guesses["gausspy_settings"] = dct_gausspy_settings
 
-        # if self.training_set:
         dct_final_guesses["improve_fit_settings"] = self.fitting
         # else:
         #     dct_final_guesses["header"] = self.header
@@ -377,7 +340,7 @@ class GaussPyDecompose(object):
             self.decomposition = pickle.load(pickle_file, encoding='latin1')
 
         self.file = os.path.basename(pathToDecomp)
-        self.filename, self.fileExtension = os.path.splitext(self.file)
+        self.filename, self.file_extension = os.path.splitext(self.file)
 
         if 'header' in self.decomposition.keys():
             self.header = self.decomposition['header']
@@ -387,43 +350,6 @@ class GaussPyDecompose(object):
             self.nan_mask = self.pickledData['nan_mask']
         if 'location' in self.pickledData.keys():
             self.location = self.pickledData['location']
-
-    # def change_fits_header(self):
-    #     import getpass
-    #     import socket
-    #
-    #     if 'COMMENT' in self.header.keys():
-    #         for i in range(len(self.header['COMMENT'])):
-    #             self.header.remove('COMMENT')
-    #
-    #     for keyword in self.removeHeaderKeywords:
-    #         if keyword in self.header.keys():
-    #             self.header.remove(keyword)
-    #
-    #     self.header['AUTHOR'] = getpass.getuser()
-    #     self.header['ORIGIN'] = socket.gethostname()
-    #     self.header['DATE'] = (datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S'), '(GMT)')
-    #
-    #     if self.headerComments is not None:
-    #         self.header['COMMENT'] = self.headerComments
-    #
-    #     if self.gausspy_decomposition:
-    #         card = fits.Card('hierarch SNR_1', self.snr_thresh,
-    #                          'threshold for GaussPy decomposition')
-    #         self.header.append(card)
-    #
-    #         card = fits.Card('hierarch SNR_2', self.snr2_thresh,
-    #                          'threshold for GaussPy decomposition')
-    #         self.header.append(card)
-    #
-    #         text = str('GaussPy parameter for decomposition')
-    #         card = fits.Card('hierarch ALPHA1', self.alpha1, text)
-    #         self.header.append(card)
-    #
-    #         if self.two_phase_decomposition:
-    #             text = str('2nd parameter for 2-phase decomposition')
-    #             card = fits.Card('hierarch ALPHA2', self.alpha2, text)
-    #             self.header.append(card)
 
     def make_cube(self, mode='full_decomposition'):
         """Create FITS cube of the decomposition results.
