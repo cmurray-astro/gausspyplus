@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: shared_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-04-01T15:57:54+02:00
+# @Last modified time: 2019-04-02T16:53:32+02:00
 
 import time
 import warnings
@@ -651,7 +651,7 @@ def correct_rms(average_rms=None, idx=None):
 def get_rms_noise(spectrum, max_consecutive_channels=14, pad_channels=5,
                   average_rms=None, idx=None, min_fraction_noise_channels=0.1,
                   min_fraction_average_rms=0.1):
-    """Short summary.
+    """Determine the root-mean-square noise of a spectrum.
 
     Parameters
     ----------

@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: plotting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-04-01T15:54:43+02:00
+# @Last modified time: 2019-04-02T15:49:35+02:00
 
 import itertools
 import os
@@ -239,12 +239,23 @@ def scale_fontsize(rowsize):
     return fontsize
 
 
-def plot_spectra(pathToDataPickle, pathToPlots, path_to_decomp_pickle=None,
+def plot_spectra(pathToDataPickle, *args,
+                 path_to_plots=None, path_to_decomp_pickle=None,
                  training_set=False, cols=5, rowsize=7.75, rowbreak=50, dpi=50,
                  n_spectra=None, suffix='', subcube=False, pixel_range=None,
                  list_indices=None, gaussians=True, residual=True, signal_ranges=True, random_seed=111):
 
     print("\nPlotting...")
+
+    #  for compatibility with older versions
+    if args:
+        path_to_plots = args[0]
+
+    if path_to_plots is None:
+        if path_to_decomp_pickle is None:
+            path_to_plots = os.path.dirname(pathToDataPickle)
+        else:
+            path_to_plots = os.path.dirname(path_to_decomp_pickle)
 
     #  check if all necessary files are supplied
     if (path_to_decomp_pickle is None) and (training_set is False):
@@ -380,12 +391,12 @@ def plot_spectra(pathToDataPickle, pathToPlots, path_to_decomp_pickle=None,
 
             fig.tight_layout()
 
-            if not os.path.exists(pathToPlots):
-                os.makedirs(pathToPlots)
-            pathname = os.path.join(pathToPlots, filename)
+            if not os.path.exists(path_to_plots):
+                os.makedirs(path_to_plots)
+            pathname = os.path.join(path_to_plots, filename)
             fig.savefig(pathname, dpi=dpi, overwrite=True)
             plt.close()
-            print("\n>> saved '{}' in {}".format(filename, pathToPlots))
+            print("\n>> saved '{}' in {}".format(filename, path_to_plots))
 
             remaining_rows = rowbreak
             #  for last iteration

@@ -2,7 +2,7 @@
 # @Date:   2019-03-03T20:27:37+01:00
 # @Filename: config_file.py
 # @Last modified by:   riener
-# @Last modified time: 2019-04-01T15:05:10+02:00
+# @Last modified time: 2019-04-01T16:45:44+02:00
 
 import collections
 import textwrap
@@ -409,3 +409,7 @@ def make(all_keywords=False, description=True, outputDir=''):
     config_file = append_keywords(config_file, dct_spatial_fitting,
                                   all_keywords=all_keywords,
                                   description=description)
+
+    with open(outputDir + 'gausspy+.ini', 'w') as file:
+        for line in config_file:
+            file.write(line)

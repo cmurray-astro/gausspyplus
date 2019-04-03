@@ -2,7 +2,7 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-04-01T15:49:33+02:00
+# @Last modified time: 2019-04-02T17:57:12+02:00
 
 from __future__ import print_function
 
@@ -80,13 +80,9 @@ class GaussPyDecompose(object):
     log_output : bool
         Default is 'True'. Set to 'False' if terminal output should not be logged.
     """
-    def __init__(self, path_to_pickle_file, config_file=''):
+    def __init__(self, path_to_pickle_file=None, config_file=''):
         self.path_to_pickle_file = path_to_pickle_file
-        self.dirname = os.path.dirname(path_to_pickle_file)
-        self.file = os.path.basename(path_to_pickle_file)
-        self.filename, self.file_extension = os.path.splitext(self.file)
-        self.decomp_dirname = None
-        self.parent_dirname = os.path.dirname(self.dirname)
+        self.dirpath_gpy = None
 
         self.gausspy_decomposition = True
         self.two_phase_decomposition = True
@@ -140,7 +136,7 @@ class GaussPyDecompose(object):
     def getting_ready(self):
         if self.log_output:
             self.logger = set_up_logger(
-                self.parent_dirname, self.filename, method='g+_decomposition')
+                self.dirpath_gpy, self.filename, method='g+_decomposition')
 
         string = 'GaussPy decomposition'
         banner = len(string) * '='
@@ -186,14 +182,22 @@ class GaussPyDecompose(object):
         self.channels = self.pickledData['x_values']
         self.errors = self.pickledData['error']
 
-        if self.decomp_dirname is None:
-            decomp_dirname = os.path.normpath(
-                    self.dirname + os.sep + os.pardir)
-            self.decomp_dirname = os.path.join(decomp_dirname, 'gpy_decomposed')
-            if not os.path.exists(self.decomp_dirname):
-                os.makedirs(self.decomp_dirname)
-
     def check_settings(self):
+        if self.path_to_pickle_file is None:
+            raise Exception("Need to specify 'path_to_pickle_file'")
+
+        self.dirname = os.path.dirname(self.path_to_pickle_file)
+        self.file = os.path.basename(self.path_to_pickle_file)
+        self.filename, self.file_extension = os.path.splitext(self.file)
+
+        if self.dirpath_gpy is None:
+            self.dirpath_gpy = os.path.normpath(
+                self.dirname + os.sep + os.pardir)
+
+        self.decomp_dirname = os.path.join(self.dirpath_gpy, 'gpy_decomposed')
+        if not os.path.exists(self.decomp_dirname):
+            os.makedirs(self.decomp_dirname)
+
         if self.snr_negative is None:
             self.snr_negative = self.snr
         if self.snr_fit is None:

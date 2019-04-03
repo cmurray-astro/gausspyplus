@@ -2,7 +2,7 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: training.py
 # @Last modified by:   riener
-# @Last modified time: 2019-04-01T14:27:56+02:00
+# @Last modified time: 2019-04-02T16:55:01+02:00
 
 import ast
 import configparser
@@ -17,8 +17,9 @@ from gausspyplus.shared_functions import gaussian
 
 
 class GaussPyTraining(object):
-    def __init__(self, path_to_training_set, config_file=''):
-        self.path_to_training_set = path_to_training_set
+    def __init__(self, config_file=''):
+        self.path_to_training_set = None
+        self.gpy_dirpath = None
 
         self.two_phase_decomposition = True
         self.snr = 3.
@@ -61,8 +62,12 @@ class GaussPyTraining(object):
                     raise Exception('Could not parse parameter {} from config file'.format(key))
 
     def initialize(self):
+        if self.path_to_training_set is None:
+            raise Exception("Need to specify 'path_to_training_set'")
+
         self.dirname = os.path.dirname(self.path_to_training_set)
-        self.gpy_dirpath = os.path.dirname(self.dirname)
+        if self.gpy_dirpath is None:
+            self.gpy_dirpath = os.path.dirname(self.dirname)
         self.file = os.path.basename(self.path_to_training_set)
         self.filename, self.file_extension = os.path.splitext(self.file)
 

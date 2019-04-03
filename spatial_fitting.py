@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-04-01T15:59:14+02:00
+# @Last modified time: 2019-04-03T11:09:23+02:00
 
 import ast
 import collections
@@ -23,10 +23,12 @@ from gausspyplus.gausspy_py3.gp_plus import split_params, get_fully_blended_gaus
 
 
 class SpatialFitting(object):
-    def __init__(self, path_to_pickle_file, path_to_decomp_file, fin_filename,
+    def __init__(self, path_to_pickle_file=None,
+                 path_to_decomp_file=None, fin_filename=None,
                  config_file=''):
         self.path_to_pickle_file = path_to_pickle_file
         self.path_to_decomp_file = path_to_decomp_file
+        self.dirpath_gpy = None
         self.fin_filename = fin_filename
 
         self.exclude_flagged = False
@@ -37,11 +39,11 @@ class SpatialFitting(object):
         self.n_max_jump_comps = 2
         self.max_refitting_iteration = 30
 
-        self.flag_blended = False
-        self.flag_residual = False
-        self.flag_rchi2 = False
-        self.flag_broad = False
-        self.flag_ncomps = False
+        self.flag_blended = None
+        self.flag_residual = None
+        self.flag_rchi2 = None
+        self.flag_broad = None
+        self.flag_ncomps = None
         self.refit_blended = False
         self.refit_residual = False
         self.refit_rchi2 = False
@@ -79,12 +81,51 @@ class SpatialFitting(object):
                 else:
                     raise Exception('Could not parse parameter {} from config file'.format(key))
 
-    def initialize(self):
-        self.dirname = os.path.dirname(self.path_to_decomp_file)
+    def check_settings(self):
+        if self.path_to_pickle_file is None:
+            raise Exception("Need to specify 'path_to_pickle_file'")
+        if self.path_to_decomp_file is None:
+            raise Exception("Need to specify 'path_to_decomp_file'")
+        self.decomp_dirname = os.path.dirname(self.path_to_decomp_file)
         self.file = os.path.basename(self.path_to_decomp_file)
         self.filename, self.file_extension = os.path.splitext(self.file)
-        self.parentDirname = os.path.dirname(self.dirname)
 
+        if self.fin_filename is None:
+            suffix = '_sf-p1'
+            if self.phase_two:
+                suffix = '_sf-p2'
+            self.fin_filename = self.filename + suffix
+
+        if self.dirpath_gpy is None:
+            self.dirpath_gpy = os.path.dirname(self.decomp_dirname)
+
+        if self.rchi2_limit_refit is None:
+            self.rchi2_limit_refit = self.rchi2_limit
+        if self.fwhm_factor_refit is None:
+            self.fwhm_factor_refit = self.fwhm_factor
+        if self.max_fwhm is None:
+            self.max_fwhm = int(self.n_channels / 2)
+
+        if all(refit is False for refit in [self.refit_blended,
+                                            self.refit_residual,
+                                            self.refit_rchi2,
+                                            self.refit_broad,
+                                            self.refit_ncomps]):
+            raise Exception(
+                "Need to set at least one 'refit_*' parameter to 'True'")
+
+        if self.flag_blended is None:
+            self.flag_blended = self.refit_blended
+        if self.flag_residual is None:
+            self.flag_residual = self.refit_residual
+        if self.flag_rchi2 is None:
+            self.flag_rchi2 = self.refit_rchi2
+        if self.flag_broad is None:
+            self.flag_broad = self.refit_broad
+        if self.flag_ncomps is None:
+            self.flag_ncomps = self.refit_ncomps
+
+    def initialize(self):
         with open(self.path_to_pickle_file, "rb") as pickle_file:
             pickledData = pickle.load(pickle_file, encoding='latin1')
 
@@ -142,17 +183,10 @@ class SpatialFitting(object):
         self.w_min = self.w_1 / np.sqrt(2)
         self.min_p = 1 - self.w_2
 
-        if self.rchi2_limit_refit is None:
-            self.rchi2_limit_refit = self.rchi2_limit
-        if self.fwhm_factor_refit is None:
-            self.fwhm_factor_refit = self.fwhm_factor
-        if self.max_fwhm is None:
-            self.max_fwhm = int(self.n_channels / 2)
-
     def getting_ready(self):
         if self.log_output:
             self.logger = set_up_logger(
-                self.parentDirname, self.filename, method='g+_spatial_refitting')
+                self.dirpath_gpy, self.filename, method='g+_spatial_refitting')
 
         phase = 1
         if self.phase_two:
@@ -214,6 +248,7 @@ class SpatialFitting(object):
 
     def spatial_fitting(self, continuity=False):
         self.phase_two = continuity
+        self.check_settings()
         self.initialize()
         self.getting_ready()
         if self.phase_two:
@@ -267,7 +302,7 @@ class SpatialFitting(object):
         import scipy.ndimage as ndimage
 
         if not flag:
-            return np.zeros(self.length).astype('bool'), np.zeros(self.length)
+            return np.zeros(self.length).astype('bool')
 
         broad_1d = np.empty(self.length)
         broad_1d.fill(np.nan)
@@ -315,7 +350,7 @@ class SpatialFitting(object):
         import scipy.ndimage as ndimage
 
         if not flag:
-            return np.zeros(self.length).astype('bool'), False
+            return np.zeros(self.length).astype('bool'), None, None
 
         nanmask_1d += self.nanMask  # not really necessary
         if self.only_print_flags:
@@ -1352,9 +1387,10 @@ class SpatialFitting(object):
 
     def save_final_results(self):
         pathToFile = os.path.join(
-            self.dirname, '{}.pickle'.format(self.fin_filename))
+            self.decomp_dirname, '{}.pickle'.format(self.fin_filename))
         pickle.dump(self.decomposition, open(pathToFile, 'wb'), protocol=2)
-        self.say(">> saved '{}' in {}".format(self.fin_filename, self.dirname))
+        self.say(">> saved '{}' in {}".format(
+            self.fin_filename, self.decomp_dirname))
 
     def say(self, message):
         """Diagnostic messages."""

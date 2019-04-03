@@ -2,13 +2,14 @@
 # @Date:   2018-12-19T17:26:54+01:00
 # @Filename: parallel_processing.py
 # @Last modified by:   riener
-# @Last modified time: 2019-04-01T15:53:10+02:00
+# @Last modified time: 2019-04-01T20:16:22+02:00
 
 """Parallelization routine.
 
 Used by gpy_compare.py, moment_masking.py
 """
 import multiprocessing
+import signal
 import numpy as np
 # import signal
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -17,8 +18,15 @@ from tqdm import tqdm
 from gausspyplus.spectral_cube_functions import determine_noise
 from gausspyplus.prepare import GaussPyPrepare
 from gausspyplus.spatial_fitting import SpatialFitting
+from gausspyplus.training_set import GaussPyTrainingSet
 
 # ------------MULTIPROCESSING------------
+
+
+def init_worker_ts():
+    """Worker initializer to ignore Keyboard interrupt."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 
 def init(mp_info):
@@ -47,6 +55,11 @@ def refit_spectrum_2(i):
 
 def calculate_noise_gpy(i):
     result = GaussPyPrepare.calculate_rms_noise(mp_params[0], mp_data[i], i)
+    return result
+
+
+def decompose_spectrum_ts(i):
+    result = GaussPyTrainingSet.decompose(mp_params[0], mp_data[i], i)
     return result
 
 
@@ -117,3 +130,38 @@ def func(use_ncpus=None, function='noise'):
         print("KeyboardInterrupt... quitting.")
         quit()
     return results_list
+
+
+def func_ts(total, use_ncpus=None):
+    # Multiprocessing code
+    ncpus = multiprocessing.cpu_count()
+    if use_ncpus is None:
+        use_ncpus = int(0.75 * ncpus)
+    print('using {} out of {} cpus'.format(use_ncpus, ncpus))
+    p = multiprocessing.Pool(use_ncpus, init_worker_ts)
+
+    try:
+        results_list = []
+        counter = 0
+        pbar = tqdm(total=total)
+        for i, result in enumerate(
+                p.imap_unordered(decompose_spectrum_ts, mp_ilist)):
+            if result is not None:
+                counter += 1
+                pbar.update(1)
+                results_list.append(result)
+            if counter == total:
+                break
+        pbar.close()
+
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt... quitting.")
+        p.terminate()
+        quit()
+    p.close()
+    del p
+    return results_list
+
+
+if __name__ == "__main__":
+    ''

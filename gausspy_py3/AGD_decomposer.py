@@ -2,7 +2,7 @@
 # @Date:   Nov 10, 2014
 # @Filename: AGD_decomposer.py
 # @Last modified by:   riener
-# @Last modified time: 2019-03-18T13:53:24+01:00
+# @Last modified time: 2019-04-02T16:57:28+02:00
 
 # Standard Libs
 import time
@@ -245,7 +245,7 @@ def initialGuess(vel, data, errors=None, alpha=None, plot=False, mode='conv',
         for i in range(FF_matrix.shape[0]):
             for j in range(FF_matrix.shape[1]):
                 FF_matrix[i, j] = np.exp(-(offsets[i]-offsets[j])**2/2./(FWHMs[j] / 2.355)**2)
-        amps_new = lstsq(FF_matrix, amps)[0]
+        amps_new = lstsq(FF_matrix, amps, rcond=None)[0]
         if np.all(amps_new > 0):
             amps = amps_new
 

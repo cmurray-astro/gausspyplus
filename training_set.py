@@ -3,17 +3,15 @@
 # @Filename: training_set.py
 # @Last modified by:   riener
 
-# @Last modified time: 2019-04-01T16:03:35+02:00
+# @Last modified time: 2019-04-03T11:34:27+02:00
 
 import ast
 import configparser
 import itertools
-import multiprocessing
+# import multiprocessing
 import os
 import pickle
 import random
-import signal
-import sys
 
 import numpy as np
 
@@ -21,67 +19,18 @@ from astropy import units as u
 from astropy.io import fits
 from astropy.modeling import models, fitting, optimizers
 
-from tqdm import tqdm
-
 from gausspyplus.shared_functions import gaussian, determine_significance, get_max_consecutive_channels, get_noise_spike_ranges, get_signal_ranges, mask_channels, goodness_of_fit
 
 from gausspyplus.spectral_cube_functions import determine_noise, remove_additional_axes
-
-if (sys.version_info < (3, 0)):
-    raise Exception('Script has to be run in Python 3 environment.')
-
-
-def mp_init_worker():
-    """Worker initializer to ignore Keyboard interrupt."""
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
-
-
-def mp_init(lst):
-    global mp_ilist, mp_indices, mp_gpy_object
-    mp_gpy_object, mp_indices = lst
-    mp_ilist = np.arange(len(mp_indices))
-
-
-def mp_decompose_one(i):
-    result = GaussPyTrainingSet.decompose(mp_gpy_object, mp_indices[i], i)
-    return result
-
-
-def mp_func(total, use_ncpus=None):
-    # Multiprocessing code
-    ncpus = multiprocessing.cpu_count()
-    if use_ncpus is None:
-        use_ncpus = int(0.75 * ncpus)
-    print('using {} out of {} cpus'.format(use_ncpus, ncpus))
-    p = multiprocessing.Pool(use_ncpus, mp_init_worker)
-
-    try:
-        results_list = []
-        counter = 0
-        pbar = tqdm(total=total)
-        for i, result in enumerate(p.imap_unordered(mp_decompose_one, mp_ilist)):
-            if result is not None:
-                counter += 1
-                pbar.update(1)
-                results_list.append(result)
-            if counter == total:
-                break
-        pbar.close()
-
-    except KeyboardInterrupt:
-        print("KeyboardInterrupt... quitting.")
-        p.terminate()
-        quit()
-    p.close()
-    del p
-    return results_list
+from gausspyplus.miscellaneous_functions import check_if_all_values_are_none
 
 
 class GaussPyTrainingSet(object):
-    def __init__(self, path_to_file, config_file=''):
-        self.path_to_file = path_to_file
-        self.path_to_training_set = None
+    def __init__(self, config_file=''):
+        self.path_to_file = None
+        self.filename = None
+        self.dirpath_gpy = None
+        self.filename_out = None
 
         self.n_spectra = 5
         self.order = 6
@@ -121,6 +70,12 @@ class GaussPyTrainingSet(object):
                 else:
                     raise Exception('Could not parse parameter {} from config file'.format(key))
 
+    def check_settings(self):
+        check_if_all_values_are_none(self.path_to_file, self.dirpath_gpy,
+                                     'path_to_file', 'dirpath_gpy')
+        check_if_all_values_are_none(self.path_to_file, self.filename,
+                                     'path_to_file', 'filename')
+
     def initialize(self):
         self.minStddev = None
         if self.min_fwhm is not None:
@@ -130,9 +85,21 @@ class GaussPyTrainingSet(object):
         if self.max_fwhm is not None:
             self.maxStddev = self.max_fwhm/2.355
 
-        self.dirname = os.path.dirname(self.path_to_file)
-        self.file = os.path.basename(self.path_to_file)
-        self.filename, self.file_extension = os.path.splitext(self.file)
+        if self.path_to_file is not None:
+            self.dirname = os.path.dirname(self.path_to_file)
+            self.filename = os.path.basename(self.path_to_file)
+            self.hdu = fits.open(self.path_to_file)[0]
+
+        if self.dirpath_gpy is not None:
+            self.dirname = self.dirpath_gpy
+
+        self.filename, self.file_extension = os.path.splitext(self.filename)
+
+        if self.filename_out is None:
+            self.filename_out = '{}-training_set-{}_spectra{}.pickle'.format(
+                self.filename, self.n_spectra, self.suffix)
+        elif not self.filename_out.endswith('.pickle'):
+            self.filename_out = self.filename_out + '.pickle'
 
         self.header = None
 
@@ -151,6 +118,13 @@ class GaussPyTrainingSet(object):
             self.n_channels = len(self.data[0])
 
         self.channels = np.arange(self.n_channels)
+
+    def say(self, message):
+        """Diagnostic messages."""
+        # if self.log_output:
+        #     self.logger.info(message)
+        if self.verbose:
+            print(message)
 
     def decompose_spectra(self):
         self.initialize()
@@ -180,10 +154,16 @@ class GaussPyTrainingSet(object):
         if self.use_all:
             self.n_spectra = nSpectra
 
-        #  start multiprocessing
-        mp_init([self, indices])
-        results_list = mp_func(self.n_spectra, use_ncpus=self.use_ncpus)
+        import gausspyplus.parallel_processing
+        gausspyplus.parallel_processing.init([indices, [self]])
+
+        # #  start multiprocessing
+        # mp_init([self, indices])
+        # results_list = mp_func(self.n_spectra, use_ncpus=self.use_ncpus)
+        results_list = gausspyplus.parallel_processing.func_ts(
+            self.n_spectra, use_ncpus=self.use_ncpus)
         print('SUCCESS\n')
+
         for result in results_list:
             if result is not None:
                 fit_values, spectrum, location, signal_ranges, rms, rchi2, index, i = result
@@ -210,16 +190,17 @@ class GaussPyTrainingSet(object):
                 data['fwhms'] = data.get('fwhms', []) + [fwhms]
                 data['means'] = data.get('means', []) + [means]
                 data['signal_ranges'] = data.get('signal_ranges', []) + [signal_ranges]
-                # data['x_values'] = data.get('x_values', []) + [self.channels]
         data['x_values'] = self.channels
         if self.header:
             data['header'] = self.header
 
-        if not os.path.exists(self.path_to_training_set):
-            os.makedirs(self.path_to_training_set)
-        filename = '{}{}.pickle'.format(self.filename, self.suffix)
-        path_to_file = os.path.join(self.path_to_training_set, filename)
+        dirname = os.path.join(self.dirname, 'gpy_training')
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+
+        path_to_file = os.path.join(dirname, self.filename_out)
         pickle.dump(data, open(path_to_file, 'wb'), protocol=2)
+        self.say(">> saved '{}' in '{}'".format(dirname, self.filename_out))
 
     def decompose(self, index, i):
         if self.header:
@@ -373,7 +354,10 @@ class GaussPyTrainingSet(object):
                     gg_init += gaussians[i]
 
             fitter = fitting.SLSQPLSQFitter()
-            gg_fit = fitter(gg_init, channels, spectrum, disp=False)
+            try:
+                gg_fit = fitter(gg_init, channels, spectrum, disp=False)
+            except TypeError:
+                gg_fit = fitter(gg_init, channels, spectrum, verblevel=False)
 
             fit_values = []
             if len(gg_fit.param_sets) > 3:
