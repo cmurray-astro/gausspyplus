@@ -2,7 +2,7 @@
 # @Date:   2019-02-18T16:27:12+01:00
 # @Filename: spectral_cube_functions.py
 # @Last modified by:   riener
-# @Last modified time: 2019-04-01T16:02:42+02:00
+# @Last modified time: 2019-04-03T13:07:29+02:00
 
 
 import getpass
@@ -263,7 +263,7 @@ def swap_axes(data, header, new_order):
 def get_slice_parameters(path_to_file=None, header=None, wcs=None,
                          range_x_wcs=[None, None], range_y_wcs=[None, None], range_z_wcs=[None, None],
                          x_unit=None, y_unit=None, z_unit=None,
-                         include_max_val=True):
+                         include_max_val=True, get_slices=True):
     """Get slice parameters in pixels for given coordinate ranges.
 
     Parameters
@@ -286,11 +286,13 @@ def get_slice_parameters(path_to_file=None, header=None, wcs=None,
         Unit of z coordinates (default is u.m/u.s).
     include_max_val : bool
         Default is 'True'. Includes the upper coordinate value in the slice parameters.
+    get_slices : bool
+        Default is 'True'. If set to 'False', a tuple of the slice parameters is returned instead of the slices.
 
     Returns
     -------
     slices : tuple
-        Slice parameters given in pixel values in the form (slice(zmin, zmax), slice(ymin, ymax), slice(xmin, xmax)).
+        Slice parameters given in pixel values in the form (slice(zmin, zmax), slice(ymin, ymax), slice(xmin, xmax)). If 'get_slices' is set to 'False', ((zmin, zmax), (ymin, ymax), (xmin, xmax)) is returned instead.
 
     """
     if x_unit is None:
@@ -340,6 +342,8 @@ def get_slice_parameters(path_to_file=None, header=None, wcs=None,
     zmin = None if range_z_wcs[0] is None else zmin
     zmax = None if range_z_wcs[1] is None else zmax
 
+    if not get_slices:
+        return ((zmin, zmax), (ymin, ymax), (xmin, xmax))
     return (slice(zmin, zmax), slice(ymin, ymax), slice(xmin, xmax))
 
 

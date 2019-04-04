@@ -2,7 +2,7 @@
 # @Date:   2019-02-08T15:40:10+01:00
 # @Filename: decompose.py
 # @Last modified by:   riener
-# @Last modified time: 2019-04-02T17:57:12+02:00
+# @Last modified time: 2019-04-03T12:05:09+02:00
 
 from __future__ import print_function
 
@@ -19,6 +19,7 @@ import numpy as np
 from astropy import units as u
 from astropy.table import Table
 from astropy.wcs import WCS
+from tqdm import tqdm
 
 from gausspyplus.shared_functions import gaussian, area_of_gaussian, combined_gaussian
 from gausspyplus.spectral_cube_functions import change_header, save_fits, correct_header, update_header
@@ -475,7 +476,7 @@ class GaussPyDecompose(object):
             velocity, e_amp, e_vel_disp, e_velocity, e_int_tot = (
                 [] for i in range(14))
 
-        for idx in range(length):
+        for idx in tqdm(range(length)):
             ncomps = self.decomposition['N_components'][idx]
 
             #  do not continue if spectrum was masked out, was not fitted,

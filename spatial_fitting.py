@@ -2,7 +2,7 @@
 # @Date:   2019-01-22T08:00:18+01:00
 # @Filename: spatial_fitting.py
 # @Last modified by:   riener
-# @Last modified time: 2019-04-03T11:09:23+02:00
+# @Last modified time: 2019-04-04T10:22:49+02:00
 
 import ast
 import collections
@@ -92,9 +92,13 @@ class SpatialFitting(object):
 
         if self.fin_filename is None:
             suffix = '_sf-p1'
+            self.fin_filename = self.filename + suffix
             if self.phase_two:
                 suffix = '_sf-p2'
-            self.fin_filename = self.filename + suffix
+                if self.filename.endswith('_sf-p1'):
+                    self.fin_filename = self.filename.replace('_sf-p1', '_sf-p2')
+                else:
+                    self.fin_filename = self.filename + suffix
 
         if self.dirpath_gpy is None:
             self.dirpath_gpy = os.path.dirname(self.decomp_dirname)
@@ -103,8 +107,6 @@ class SpatialFitting(object):
             self.rchi2_limit_refit = self.rchi2_limit
         if self.fwhm_factor_refit is None:
             self.fwhm_factor_refit = self.fwhm_factor
-        if self.max_fwhm is None:
-            self.max_fwhm = int(self.n_channels / 2)
 
         if all(refit is False for refit in [self.refit_blended,
                                             self.refit_residual,
@@ -142,6 +144,8 @@ class SpatialFitting(object):
             self.length = len(self.data)
             self.n_channels = len(self.data[0])
         self.channels = np.arange(self.n_channels)
+        if self.max_fwhm is None:
+            self.max_fwhm = int(self.n_channels / 3)
 
         self.signalRanges = pickledData['signal_ranges']
         self.noiseSpikeRanges = pickledData['noise_spike_ranges']
