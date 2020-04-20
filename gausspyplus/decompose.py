@@ -18,7 +18,7 @@ from tqdm import tqdm
 from .config_file import get_values_from_config_file
 from .utils.gaussian_functions import gaussian, area_of_gaussian, combined_gaussian
 from .utils.spectral_cube_functions import change_header, save_fits, correct_header, update_header
-from .utils.output import set_up_logger, say
+from .utils.output import set_up_logger
 
 
 class GaussPyDecompose(object):
@@ -85,14 +85,13 @@ class GaussPyDecompose(object):
         self.snr_fit = None
         self.significance = 5.
         self.snr_negative = None
-        self.rchi2_limit = None
+        self.rchi2_limit = 1.5
         self.max_amp_factor = 1.1
-        self.refit_neg_res_peak = True
+        self.refit_residual = True
         self.refit_broad = True
         self.refit_blended = True
         self.separation_factor = 0.8493218
         self.fwhm_factor = 2.
-        self.min_pvalue = 0.01
 
         self.main_beam_efficiency = None
         self.vel_unit = u.km / u.s
@@ -112,15 +111,21 @@ class GaussPyDecompose(object):
         string = 'GaussPy decomposition'
         banner = len(string) * '='
         heading = '\n' + banner + '\n' + string + '\n' + banner
-        say(heading, logger=self.logger)
+        self.say(heading)
+
+    def say(self, message):
+        """Diagnostic messages."""
+        if self.log_output:
+            self.logger.info(message)
+        if self.verbose:
+            print(message)
 
     def initialize_data(self):
-        self.logger = False
         if self.log_output:
             self.logger = set_up_logger(
                 self.dirpath_gpy, self.filename, method='g+_decomposition')
 
-        say("\npickle load '{}'...".format(self.file), logger=self.logger)
+        self.say("\npickle load '{}'...".format(self.file))
 
         with open(self.path_to_pickle_file, "rb") as pickle_file:
             self.pickled_data = pickle.load(pickle_file, encoding='latin1')
@@ -166,7 +171,6 @@ class GaussPyDecompose(object):
 
     def decompose(self):
         if self.single_prepared_spectrum:
-            self.logger = False
             self.testing = True
             self.use_ncpus = 1
             self.log_output = False
@@ -191,22 +195,10 @@ class GaussPyDecompose(object):
             self.snr2_thresh = self.snr
 
         self.fitting = {
-            'improve_fitting': self.improve_fitting,
-            'min_fwhm': self.min_fwhm,
-            'max_fwhm': self.max_fwhm,
-            'snr': self.snr,
-            'snr_fit': self.snr_fit,
-            'significance': self.significance,
-            'snr_negative': self.snr_negative,
-            'rchi2_limit': self.rchi2_limit,
-            'max_amp_factor': self.max_amp_factor,
-            'neg_res_peak': self.refit_neg_res_peak,
-            'broad': self.refit_broad,
-            'blended': self.refit_blended,
-            'fwhm_factor': self.fwhm_factor,
+            'improve_fitting': self.improve_fitting, 'min_fwhm': self.min_fwhm, 'max_fwhm': self.max_fwhm, 'snr': self.snr, 'snr_fit': self.snr_fit, 'significance': self.significance, 'snr_negative': self.snr_negative, 'rchi2_limit': self.rchi2_limit, 'max_amp_factor': self.max_amp_factor, 'negative_residual': self.refit_residual,
+            'broad': self.refit_broad, 'blended': self.refit_blended, 'fwhm_factor': self.fwhm_factor,
             'separation_factor': self.separation_factor,
-            'exclude_means_outside_channel_range': self.exclude_means_outside_channel_range,
-            'min_pvalue': self.min_pvalue}
+            'exclude_means_outside_channel_range': self.exclude_means_outside_channel_range}
 
         string_gausspy = str(
             '\ndecomposition settings:'
@@ -221,7 +213,7 @@ class GaussPyDecompose(object):
                 c=self.alpha2,
                 d=self.snr_thresh,
                 e=self.snr2_thresh)
-        say(string_gausspy, logger=self.logger)
+        self.say(string_gausspy)
 
         string_gausspy_plus = ''
         if self.fitting['improve_fitting']:
@@ -231,7 +223,7 @@ class GaussPyDecompose(object):
             string_gausspy_plus += str(
                 '\nimprove_fitting: {}').format(
                     self.fitting['improve_fitting'])
-        say(string_gausspy_plus, logger=self.logger)
+        self.say(string_gausspy_plus)
 
     def start_decomposition(self):
         if self.alpha1 is None:
@@ -242,7 +234,7 @@ class GaussPyDecompose(object):
                 "Need to specify 'alpha2' for 'two_phase_decomposition'.")
 
         self.decomposition_settings()
-        say('\ndecomposing data...', logger=self.logger)
+        self.say('\ndecomposing data...')
 
         from .gausspy_py3 import gp as gp
         g = gp.GaussianDecomposer()  # Load GaussPy
@@ -273,7 +265,7 @@ class GaussPyDecompose(object):
             self.save_initial_guesses()
 
     def save_initial_guesses(self):
-        say('\npickle dump GaussPy initial guesses...', logger=self.logger)
+        self.say('\npickle dump GaussPy initial guesses...')
 
         filename = '{}{}_fit_ini.pickle'.format(self.filename, self.suffix)
         pathname = os.path.join(self.decomp_dirname, filename)
@@ -285,11 +277,10 @@ class GaussPyDecompose(object):
             dct_initial_guesses[key] = self.decomposition[key]
 
         pickle.dump(dct_initial_guesses, open(pathname, 'wb'), protocol=2)
-        say("\033[92mSAVED FILE:\033[0m '{}' in '{}'".format(
-            filename, self.decomp_dirname), logger=self.logger)
+        self.say("\033[92mSAVED FILE:\033[0m '{}' in '{}'".format(filename, self.decomp_dirname))
 
     def save_final_results(self):
-        say('\npickle dump GaussPy final results...', logger=self.logger)
+        self.say('\npickle dump GaussPy final results...')
 
         dct_gausspy_settings = {"two_phase": self.two_phase_decomposition,
                                 "alpha1": self.alpha1,
@@ -301,29 +292,32 @@ class GaussPyDecompose(object):
 
         dct_final_guesses = {}
 
-        for key in ["index_fit", "best_fit_rchi2", "best_fit_aicc", "pvalue",
+        for key in ["index_fit", "best_fit_rchi2", "best_fit_aicc",
                     "amplitudes_fit", "amplitudes_fit_err", "fwhms_fit",
                     "fwhms_fit_err", "means_fit", "means_fit_err", "log_gplus",
-                    "N_neg_res_peak", "N_blended", "N_components",
-                    "quality_control"]:
+                    "N_negative_residuals", "N_blended", "N_components"]:
             dct_final_guesses[key] = self.decomposition[key]
 
         dct_final_guesses["gausspy_settings"] = dct_gausspy_settings
 
         dct_final_guesses["improve_fit_settings"] = self.fitting
+        # else:
+        #     dct_final_guesses["header"] = self.header
+        #     dct_final_guesses["location"] = self.location
+        #     dct_final_guesses["data_list"] = self.data
+        #     dct_final_guesses["error"] = self.errors
 
         filename = '{}{}_fit_fin.pickle'.format(self.filename, self.suffix)
         pathname = os.path.join(self.decomp_dirname, filename)
         pickle.dump(dct_final_guesses, open(pathname, 'wb'), protocol=2)
-        say("\033[92mSAVED FILE:\033[0m '{}' in '{}'".format(
-            filename, self.decomp_dirname), logger=self.logger)
+        self.say("\033[92mSAVED FILE:\033[0m '{}' in '{}'".format(filename, self.decomp_dirname))
 
     def load_final_results(self, pathToDecomp):
         self.check_settings()
         self.initialize_data()
         self.getting_ready()
 
-        say('\npickle load final GaussPy results...', logger=self.logger)
+        self.say('\npickle load final GaussPy results...')
 
         self.decomp_dirname = os.path.dirname(pathToDecomp)
         with open(pathToDecomp, "rb") as pickle_file:
@@ -349,7 +343,7 @@ class GaussPyDecompose(object):
         mode : str
             'full_decomposition' recreates the whole FITS cube, 'integrated_intensity' creates a cube with the integrated intensity values of the Gaussian components placed at their mean positions, 'main_component' only retains the fitted component with the largest amplitude value
         """
-        say('\ncreate {} cube...'.format(mode), logger=self.logger)
+        self.say('\ncreate {} cube...'.format(mode))
 
         x = self.header['NAXIS1']
         y = self.header['NAXIS2']
@@ -407,14 +401,23 @@ class GaussPyDecompose(object):
         array[self.nan_mask] = np.nan
 
         comments = [comment]
+        # if self.gausspy_decomposition:
+        #     for name, value in zip(
+        #             ['SNR_1', 'SNR_2', 'ALPHA1'],
+        #             [self.snr_thresh, self.snr2_thresh, self.alpha1]):
+        #         comments.append('GaussPy+ parameter {}={}'.format(name, value))
+        #
+        #     if self.two_phase_decomposition:
+        #         comments.append('GaussPy+ parameter {}={}'.format(
+        #             'ALPHA2', self.alpha2))
 
         self.header = update_header(
             self.header, comments=comments, write_meta=True)
 
         pathToFile = os.path.join(self.decomp_dirname, 'FITS', filename)
         save_fits(array, self.header, pathToFile, verbose=False)
-        say("\033[92mSAVED FILE:\033[0m '{}' in '{}'".format(
-            filename, os.path.dirname(pathToFile)), logger=self.logger)
+        self.say("\033[92mSAVED FILE:\033[0m '{}' in '{}'".format(
+            filename, os.path.dirname(pathToFile)))
 
     def create_input_table(self, ncomps_max=None):
         """Create a table of the decomposition results.
@@ -444,7 +447,7 @@ class GaussPyDecompose(object):
         ncomps_max : int
             All spectra whose number of fitted components exceeds this value will be neglected.
         """
-        say('\ncreate input table...', logger=self.logger)
+        self.say('\ncreate input table...')
 
         length = len(self.decomposition['amplitudes_fit'])
 
@@ -542,41 +545,176 @@ class GaussPyDecompose(object):
         filename = '{}{}_wco.dat'.format(self.filename, self.suffix)
         pathToTable = os.path.join(tableDirname, filename)
         table.write(pathToTable, format='ascii', overwrite=True)
-        say("\n\033[92mSAVED FILE:\033[0m '{}' in '{}'".format(
-            filename, tableDirname), logger=self.logger)
+        self.say("\n\033[92mSAVED FILE:\033[0m '{}' in '{}'".format(filename, tableDirname))
 
-    def produce_component_map(self, dtype='float32'):
+    def produce_component_map(self, vel_range=None, name_str='all'):
         """Create FITS map showing the number of fitted components.
 
         The FITS file in saved in the gpy_maps directory.
         """
-        say("\nmaking component map...", logger=self.logger)
+        self.say("\nmaking component map...")
         data = np.empty((self.header['NAXIS2'],
                          self.header['NAXIS1']))
         data.fill(np.nan)
 
-        for idx, ((y, x), components) in enumerate(zip(
-                self.location, self.decomposition['N_components'])):
+        velocities = ((np.arange(self.header["NAXIS3"]) - self.header["CRPIX3"] +1) * self.header["CDELT3"] + self.header["CRVAL3"])/1000.
+
+        for idx, ((y, x), components, means) in enumerate(zip(
+                self.location, self.decomposition['N_components'], self.decomposition['means_fit'])):
             if components is not None:
-                data[y, x] = components
+                means = np.array(means, dtype=float)
+                mean_vels = []
+                for mean in means:
+                    mean_vels.append(velocities[np.argmin(np.abs(self.channels-mean))])
+
+                mean_vels = np.array(mean_vels, dtype=float)
+                if vel_range is not None:
+                    vel_spots = np.argwhere((mean_vels > float(vel_range[0])) & (mean_vels < float(vel_range[1]))).ravel()
+                    components_cut = len(mean_vels[vel_spots])
+                    # print(components, components_cut)
+                else:
+                    components_cut = components
+                data[y, x] = components_cut
 
         comments = ['Number of fitted GaussPy components']
         header = change_header(self.header.copy(), format='pp',
                                comments=comments)
 
-        filename = "{}{}_component_map.fits".format(
-            self.filename, self.suffix)
+        filename = "{}{}_component_map_{}.fits".format(
+            self.filename, self.suffix, name_str)
         pathToFile = os.path.join(
             os.path.dirname(self.dirname), 'gpy_maps', filename)
 
-        save_fits(data.astype(dtype), header, pathToFile, verbose=True)
+        save_fits(data, header, pathToFile, verbose=True)
 
-    def produce_rchi2_map(self, dtype='float32'):
+
+    def produce_cnm_map(self, lw, vel_range=None, name_str = 'all'):
+        """Create FITS map showing the CNM.
+
+        The FITS file in saved in the gpy_maps directory.
+        """
+        self.say("\nmaking CNM map...")
+        data = np.empty((self.header['NAXIS2'],
+                         self.header['NAXIS1']))
+        data.fill(np.nan)
+
+        factor_kms = np.abs(self.header['CDELT3']) / 1e3
+        velocities = ((np.arange(self.header["NAXIS3"]) - self.header["CRPIX3"] +1) * self.header["CDELT3"] + self.header["CRVAL3"])/1000.
+
+        for idx, ((y, x), components, amps, fwhms, means) in enumerate(zip(
+                self.location, self.decomposition['N_components'], self.decomposition['amplitudes_fit'], self.decomposition['fwhms_fit'],  self.decomposition['means_fit'])):
+            if components is not None:
+                nh_cnm = 0.
+                nh_tot = 0.
+
+                means = np.array(means, dtype=float)
+                mean_vels = []
+                for mean in means:
+                    mean_vels.append(velocities[np.argmin(np.abs(self.channels-mean))])
+
+                mean_vels = np.array(mean_vels, dtype=float)
+                amps = np.array(amps, dtype=float)
+                fwhms = np.array(fwhms, dtype=float) * factor_kms
+
+                if vel_range is not None:
+                    # print(self.channels)
+                    # quit()
+                    vel_spots = np.argwhere((mean_vels > float(vel_range[0])) & (mean_vels < float(vel_range[1]))).ravel()
+                    amps = amps[vel_spots]
+                    fwhms = fwhms[vel_spots]
+
+                # print(fwhms)
+                spots = np.argwhere(np.array(fwhms) < lw).ravel()
+                # print(fwhms[spots])
+                # print(self.velocity_increment, factor_kms)
+                if spots is not None:
+                    for j in spots:
+                        nh_cnm += area_of_gaussian(
+                            amps[j], fwhms[j])
+                #         print(nh_cnm)
+                # print()
+                for k in range(len(amps)):
+                    integrated_intensity = area_of_gaussian(
+                        amps[k], fwhms[k])
+                    channel = int(round(means[k]))
+                    if self.channels[0] <= channel <= self.channels[-1]:
+                        nh_tot += integrated_intensity
+                        # print(nh_tot)
+
+                # print()
+                # print(nh_cnm, nh_tot)
+                if nh_tot > 0.:
+                    data[y,x] =  nh_cnm/nh_tot
+                else:
+                    data[y,x] = 0.
+
+
+        comments = ['CNM Fraction']
+        header = change_header(self.header.copy(), format='pp',
+                               comments=comments)
+
+        filename = "{}{}_CNM_map_{}_{}.fits".format(
+            self.filename, self.suffix, str(int(lw)), name_str)
+        pathToFile = os.path.join(
+            os.path.dirname(self.dirname), 'gpy_maps', filename)
+
+        save_fits(data, header, pathToFile, verbose=True)
+
+    def produce_nhi_map(self, vel_range=None, name_str = 'all'):
+        """Create FITS map showing the "total" N(HI).
+
+        The FITS file in saved in the gpy_maps directory.
+        """
+        self.say("\nmaking N(HI) map...")
+        data = np.empty((self.header['NAXIS2'],
+                         self.header['NAXIS1']))
+        data.fill(np.nan)
+
+        factor_kms = np.abs(self.header['CDELT3']) / 1e3
+        velocities = ((np.arange(self.header["NAXIS3"]) - self.header["CRPIX3"] +1) * self.header["CDELT3"] + self.header["CRVAL3"])/1000.
+
+        for idx, ((y, x), components, amps, fwhms, means) in enumerate(zip(
+                self.location, self.decomposition['N_components'], self.decomposition['amplitudes_fit'], self.decomposition['fwhms_fit'],  self.decomposition['means_fit'])):
+            nh_tot = 0.
+            if components is not None:
+                means = np.array(means, dtype=float)
+                mean_vels = []
+                for mean in means:
+                    mean_vels.append(velocities[np.argmin(np.abs(self.channels-mean))])
+
+                mean_vels = np.array(mean_vels, dtype=float)
+                amps = np.array(amps, dtype=float)
+                fwhms = np.array(fwhms, dtype=float) * factor_kms
+
+                if vel_range is not None:
+                    vel_spots = np.argwhere((mean_vels > float(vel_range[0])) & (mean_vels < float(vel_range[1]))).ravel()
+                    amps = amps[vel_spots]
+                    fwhms = fwhms[vel_spots]
+
+                for k in range(len(amps)):
+                    integrated_intensity = area_of_gaussian(
+                        amps[k], fwhms[k])
+                    nh_tot += integrated_intensity
+
+            data[y,x] =  nh_tot
+
+        comments = ['N(HI)']
+        header = change_header(self.header.copy(), format='pp',
+                               comments=comments)
+
+        filename = "{}{}_NHI_map_{}.fits".format(
+            self.filename, self.suffix, name_str)
+        pathToFile = os.path.join(
+            os.path.dirname(self.dirname), 'gpy_maps', filename)
+
+        save_fits(data, header, pathToFile, verbose=True)
+
+    def produce_rchi2_map(self):
         """Create FITS map showing the reduced chi-square values of the decomposition.
 
         The FITS file in saved in the gpy_maps directory.
         """
-        say("\nmaking reduced chi2 map...", logger=self.logger)
+        self.say("\nmaking reduced chi2 map...")
 
         data = np.empty((self.header['NAXIS2'], self.header['NAXIS1']))
         data.fill(np.nan)
@@ -599,12 +737,11 @@ class GaussPyDecompose(object):
         pathToFile = os.path.join(
             os.path.dirname(self.dirname), 'gpy_maps', filename)
 
-        save_fits(data.astype(dtype), header, pathToFile, verbose=True)
+        save_fits(data, header, pathToFile, verbose=True)
 
-    def produce_velocity_dispersion_map(self, mode='average', dtype='float32'):
+    def produce_velocity_dispersion_map(self, mode='average'):
         """Produce map showing the maximum velocity dispersions."""
-        say("\nmaking map of maximum velocity dispersions...",
-            logger=self.logger)
+        self.say("\nmaking map of maximum velocity dispersions...")
 
         data = np.empty((self.header['NAXIS2'], self.header['NAXIS1']))
         data.fill(np.nan)
@@ -635,6 +772,6 @@ class GaussPyDecompose(object):
         pathToFile = os.path.join(
             os.path.dirname(self.dirname), 'gpy_maps', filename)
 
-        save_fits(data.astype(dtype), header, pathToFile, verbose=False)
-        say(">> saved {} velocity dispersion map '{}' in {}".format(
-            mode, filename, os.path.dirname(pathToFile)), logger=self.logger)
+        save_fits(data, header, pathToFile, verbose=False)
+        self.say(">> saved {} velocity dispersion map '{}' in {}".format(
+            mode, filename, os.path.dirname(pathToFile)))
