@@ -52,6 +52,46 @@ def transform_header_from_crota_to_pc(header):
     return header
 
 
+def correct_header_velocity(header):
+    """Check and correct spectral axis entries of FITS header.
+
+    Parameters
+    ----------
+    header : astropy.io.fits.Header
+        FITS header.
+
+    Returns
+    -------
+    header : astropy.io.fits.Header
+        Corrected FITS header.
+
+    """
+    if header['CTYPE3'] == 'VELOCITY':
+        warnings.warn("Changed header keyword CTYPE3 from VELOCITY to VELO-LSR")
+        header['CTYPE3'] = 'VELO-LSR'
+        return header
+
+    condition = (('FREQ' in header['CTYPE3']) or
+                 ('Freq' in header['CTYPE3']) or
+                 ('freq' in header['CTYPE3']) or
+                 ('Hz' in header['CUNIT3']))
+
+    if condition:
+        cunit3 = u.Unit(header['CUNIT3'])
+        restfreq = header['RESTFRQ'] * cunit3
+        radio_equiv = u.doppler_radio(restfreq)
+        crval3 = (header['CRVAL3'] * cunit3).to(
+            u.km/u.s, equivalencies=radio_equiv)
+        cdelt3 = ((header['RESTFRQ'] + header['CDELT3']) * cunit3).to(
+            u.km/u.s, equivalencies=radio_equiv)
+        header['CTYPE3'] = 'VELOCITY'
+        header['CRVAL3'] = crval3.value
+        header['CDELT3'] = cdelt3.value
+        header['CUNIT3'] = 'km / s'
+
+    return header
+
+
 def correct_header(header, check_keywords={'BUNIT': 'K', 'CUNIT1': 'deg',
                                            'CUNIT2': 'deg', 'CUNIT3': 'm/s'},
                    keep_only_wcs_keywords=False):
@@ -78,10 +118,16 @@ def correct_header(header, check_keywords={'BUNIT': 'K', 'CUNIT1': 'deg',
         if keyword not in list(header.keys()):
             warnings.warn("{a} keyword not found in header. Assuming {a}={b}".format(a=keyword, b=value), stacklevel=2)
             header[keyword] = value
+        else:
+            try:
+                u.Unit(header[keyword])
+            except ValueError:
+                warnings.warn("{a} keyword value is an invalid unit. Assuming {a}={b}".format(a=keyword, b=value), stacklevel=2)
+                header[keyword] = value
+
     if 'CTYPE3' in list(header.keys()):
-        if header['CTYPE3'] == 'VELOCITY':
-            warnings.warn("Changed header keyword CTYPE3 from VELOCITY to VELO-LSR")
-            header['CTYPE3'] = 'VELO-LSR'
+        header = correct_header_velocity(header)
+
     if keep_only_wcs_keywords:
         wcs = WCS(header)
         dct_naxis = {}
@@ -97,7 +143,7 @@ def correct_header(header, check_keywords={'BUNIT': 'K', 'CUNIT1': 'deg',
 
 
 def update_header(header, comments=[], remove_keywords=[], update_keywords={},
-                  remove_old_comments=False, write_meta=True):
+                  remove_old_comments=False, write_meta=True, add_keywords={}):
     """Update FITS header.
 
     Parameters
@@ -114,6 +160,8 @@ def update_header(header, comments=[], remove_keywords=[], update_keywords={},
         Default is `False`. If set to `True`, existing 'COMMENT' keywords of the FITS header are removed.
     write_meta : bool
         Default is `True`. Adds or updates 'AUTHOR', 'ORIGIN', and 'DATE' FITS header keywords.
+    add_keywords : dict
+        New keywords and corresponding values that will be added to the header.
 
     Returns
     -------
@@ -122,8 +170,11 @@ def update_header(header, comments=[], remove_keywords=[], update_keywords={},
 
     """
     if remove_old_comments:
-        while ['COMMENT'] in header.keys():
-            header.remove('COMMENT')
+        while True:
+            if 'COMMENT' in list(header.keys()):
+                header.remove('COMMENT')
+            else:
+                break
 
     for keyword in remove_keywords:
         if keyword in header.keys():
@@ -131,6 +182,9 @@ def update_header(header, comments=[], remove_keywords=[], update_keywords={},
 
     for keyword, value in update_keywords.items():
         header[keyword] = value[0][1]
+
+    for key, val in add_keywords.items():
+        header[key] = val
 
     if write_meta:
         header['AUTHOR'] = getpass.getuser()
@@ -217,6 +271,7 @@ def remove_additional_axes(data, header, max_dim=3,
         Updated FITS header.
 
     """
+    header = transform_header_from_crota_to_pc(header)
     wcs = WCS(header)
 
     if header['NAXIS'] <= max_dim and wcs.wcs.naxis <= max_dim:
@@ -239,9 +294,18 @@ def remove_additional_axes(data, header, max_dim=3,
 
     wcs_header_diff = fits.HeaderDiff(wcs_header_old, wcs_header_new)
     header_diff = fits.HeaderDiff(header, wcs_header_new)
-    update_header(header, remove_keywords=wcs_header_diff.diff_keywords[0],
-                  update_keywords=header_diff.diff_keyword_values,
-                  write_meta=False)
+
+    header = update_header(
+        header, remove_keywords=wcs_header_diff.diff_keywords[0],
+        update_keywords=header_diff.diff_keyword_values,
+        write_meta=False)
+
+    while header['NAXIS'] > max_dim:
+        key = 'NAXIS{}'.format(header['NAXIS'])
+        if key in header.keys():
+            header.remove(key)
+
+        header['NAXIS'] = header['NAXIS'] - 1
 
     return data, header
 
@@ -256,7 +320,7 @@ def swap_axes(data, header, new_order):
     header : astropy.io.fits.Header
         Header of the FITS array.
     new_order : tuple
-        New order of the axes of the FITS array, e.g. (2, 1, 0).
+        New order of the axes of the FITS array, e.g. (2, 1, 0). The numbers refer to the current FITS AXES (and not to the numpy.ndarray axes!), i.e. 0 := NAXIS1, 1 := NAXIS2, 2 := NAXIS3.
 
     Returns
     -------
@@ -267,23 +331,74 @@ def swap_axes(data, header, new_order):
 
     """
     dims = data.ndim
-    data = np.transpose(data, new_order)
-    hdu = fits.PrimaryHDU(data=data)
-    header_new = hdu.header
+    old_order = list(range(len(new_order)))
+    data = np.moveaxis(data, old_order, new_order)
+    # data = np.transpose(data, new_order)
+    # hdu = fits.PrimaryHDU(data=data)
+    header_new = header.copy()#hdu.header
 
     if 'CD1_1' in list(header.keys()):
         raise Exception('Cannot swap_axes for CDX_X keywords. Convert them to CDELTX.')
 
-    for keyword in list(header.keys()):
-        for axis in range(dims):
-            if keyword.endswith(str(axis + 1)):
-                keyword_new = keyword.replace(str(axis + 1), str(new_order[axis] + 1))
+    new_header_order = np.array(dims - np.array(new_order))
+    old_header_order = np.array(dims - np.array(old_order))
+
+    for old_axis, new_axis in zip(old_header_order, new_header_order):
+        for keyword in list(header.keys()):
+            if keyword.endswith(str(old_axis)):
+                keyword_new = keyword.replace(str(old_axis), str(new_axis))
                 header_new[keyword_new] = header[keyword]
 
     header_diff = fits.HeaderDiff(header, header_new)
     for keyword, value in header_diff.diff_keyword_values.items():
         header[keyword] = value[0][1]
     return data, header
+
+
+def get_axis(header=None, channels=None, wcs=None, to_unit=None, axis=3):
+    """Return the axis of a Spectral cube in physical values.
+
+    Parameters
+    ----------
+    header : astropy.io.fits.Header
+        Header of the FITS array.
+    channels : numpy.ndarray
+        Array of the channels [0, ..., N].
+    wcs : astropy.wcs.wcs.WCS
+        WCS parameters of the FITS array.
+    to_unit : astropy.units.quantity.Quantity
+        Valid unit to which the values of the spectral axis will be converted.
+    axis : int
+        Axis number (e.g. 1 for NAXIS1, 2 for NAXIS, etc.)
+
+    Returns
+    -------
+    channels_wcs : numpy.ndarray
+        The (unitless) wcs axis of the spectral cube, converted to 'to_unit' (if specified).
+
+    """
+    key = 'NAXIS{}'.format(axis)
+    check_if_all_values_are_none(header, wcs, 'header', 'wcs')
+    check_if_all_values_are_none(header, channels, 'header', 'channels')
+    if header:
+        wcs = WCS(header)
+        channels = np.arange(header[key])
+
+    while wcs.wcs.naxis > 3:
+        axes = range(wcs.wcs.naxis)
+        wcs = wcs.dropaxis(axes[-1])
+
+    if axis == 1:
+        channels_wcs, _, _ = wcs.wcs_pix2world(channels, 0, 0, 0)
+    elif axis == 2:
+        _, channels_wcs, _ = wcs.wcs_pix2world(0, channels, 0, 0)
+    elif axis == 3:
+        _, _, channels_wcs = wcs.wcs_pix2world(0, 0, channels, 0)
+
+    if to_unit:
+        conversion_factor = wcs.wcs.cunit[axis - 1].to(to_unit)
+        channels_wcs *= conversion_factor
+    return channels_wcs
 
 
 def get_spectral_axis(header=None, channels=None, wcs=None, to_unit=None):
@@ -306,17 +421,8 @@ def get_spectral_axis(header=None, channels=None, wcs=None, to_unit=None):
         The (unitless) spectral axis of the spectral cube, converted to 'to_unit' (if specified).
 
     """
-    check_if_all_values_are_none(header, wcs, 'header', 'wcs')
-    check_if_all_values_are_none(header, channels, 'header', 'channels')
-    if header:
-        wcs = WCS(header)
-        channels = np.arange(header['NAXIS3'])
-
-    x_wcs, y_wcs, spectral_axis = wcs.wcs_pix2world(0, 0, channels, 0)
-
-    if to_unit:
-        conversion_factor = wcs.wcs.cunit[2].to(to_unit)
-        spectral_axis *= conversion_factor
+    spectral_axis = get_axis(
+        header=header, channels=channels, wcs=wcs, to_unit=to_unit, axis=3)
     return spectral_axis
 
 
@@ -500,6 +606,38 @@ def save_fits(data, header, path_to_file, verbose=True):
         save_file(os.path.basename(path_to_file), os.path.dirname(path_to_file))
 
 
+def return_hdu_options(hdu, get_hdu=False, get_data=False, get_header=False):
+    """Short summary.
+
+    Parameters
+    ----------
+    hdu : astropy.io.fits.HDUList
+        Header/Data unit of the FITS cube.
+    get_hdu : bool
+        Default is `False`. If set to `True`, an astropy.io.fits.HDUList is returned. Overrides 'get_data' and 'get_header'.
+    get_data : bool
+        Default is `True`. Returns a numpy.ndarray of the FITS array.
+    get_header : bool
+        Default is `True`. Returns a astropy.io.fits.Header of the FITS array.
+
+    Returns
+    -------
+    tuple or None
+        Header/Data unit of the FITS cube or None.
+
+    """
+    if get_hdu:
+        return (hdu)
+    elif get_data and (not get_header):
+        return (hdu.data)
+    elif (not get_data) and get_header:
+        return (hdu.header)
+    elif get_data and get_header:
+        return (hdu.data, hdu.header)
+    else:
+        return (None)
+
+
 def open_fits_file(path_to_file, get_hdu=False, get_data=True, get_header=True,
                    remove_stokes=True, check_wcs=True):
     """Open a FITS file and return the HDU or data and/or header.
@@ -524,7 +662,6 @@ def open_fits_file(path_to_file, get_hdu=False, get_data=True, get_header=True,
     astropy.io.fits.HDUList or numpy.ndarray and/or astropy.io.fits.Header.
 
     """
-
     data = fits.getdata(path_to_file)
     header = fits.getheader(path_to_file)
 
@@ -534,45 +671,89 @@ def open_fits_file(path_to_file, get_hdu=False, get_data=True, get_header=True,
     if check_wcs:
         header = correct_header(header)
 
-    if get_hdu:
-        return fits.PrimaryHDU(data, header)
-    elif get_data and (not get_header):
-        return data
-    elif (not get_data) and get_header:
-        return header
-    else:
-        return data, header
+    return return_hdu_options(
+        fits.PrimaryHDU(data, header), get_hdu=get_hdu, get_data=get_data, get_header=get_header)
 
 
-def reproject_data(input_data, output_projection, shape_out):
+def reproject_data(input_data, output_projection, shape_out, flux_factor):
     """Reproject data to a different projection.
 
     Parameters
     ----------
-    input_data : type
-        Description of parameter `input_data`.
-    output_projection : type
-        Description of parameter `output_projection`.
-    shape_out : type
-        Description of parameter `shape_out`.
+    output_projection : astropy.wcs.wcs.WCS
+        WCS parameters of the FITS array to which data is reprojected.
+    shape_out : tuple
+        Shape of the FITS array to which data is reprojected.
+    flux_factor : float
+        Multiplication factor for preserving flux.
 
     Returns
     -------
-    type
-        Description of returned object.
+    numpy.ndarray
+        Reprojected array.
 
     """
     from reproject import reproject_interp
 
     data_reprojected, footprint = reproject_interp(
         input_data, output_projection, shape_out=shape_out)
-    return data_reprojected
+    return data_reprojected * flux_factor
+
+
+def get_reproject_params(pixel_scale_input, header_projection, reproject=False,
+                         preserve_flux=True):
+    """Determine parameters for reprojection.
+
+    Parameters
+    ----------
+    pixel_scale_input : astropy.units.quantity.Quantity
+        Pixel scale of the input cube.
+    header_projection : astropy.io.fits.Header
+        Header of the FITS array to which data should be reprojected to.
+    reproject : bool
+        Default is `False`. Set to `True` if data should be reprojected to `header_projection`.
+    preserve_flux : bool
+        Default is `True`. Preserves flux in the reprojection step. If `False`, surface brightness is preserved instead.
+
+    Returns
+    -------
+    output_projection : astropy.wcs.wcs.WCS
+        WCS parameters of the FITS array to which data is reprojected.
+    shape_out : tuple
+        Shape of the FITS array to which data is reprojected.
+    flux_factor : float
+        Multiplication factor for preserving flux.
+
+    """
+    if not reproject:
+        return None, None, None, []
+
+    comment = ['Preserved surface brightness in reprojection step.']
+
+    shape_out = (header_projection['NAXIS2'], header_projection['NAXIS1'])
+    header_projection_pp = correct_header(header_projection.copy())
+    header_projection_pp = change_wcs_header_reproject(
+        header_projection_pp, header_projection_pp, ppv=False)
+    output_projection = WCS(header_projection_pp)
+
+    flux_factor = 1
+
+    if preserve_flux:
+        comment = ['Preserved flux in reprojection step.']
+        pixel_scale_output = abs(
+            output_projection.wcs.cdelt[0]) * output_projection.wcs.cunit[0]
+        pixel_scale_output = pixel_scale_output.to(u.deg)
+
+        flux_factor = pixel_scale_output**2 / pixel_scale_input**2
+
+    return output_projection, shape_out, flux_factor, comment
 
 
 def spatial_smoothing(data, header, save=False, path_to_output_file=None,
                       suffix=None, current_resolution=None,
-                      target_resolution=None, verbose=True,
-                      reproject=False, header_projection=None):
+                      target_resolution=None, unit=u.deg, verbose=True,
+                      reproject=False, header_projection=None,
+                      preserve_flux=True):
     """Smooth a FITS cube spatially and update its header.
 
     The data can only be smoothed to a circular beam.
@@ -593,12 +774,16 @@ def spatial_smoothing(data, header, save=False, path_to_output_file=None,
         Current size of the resolution element (FWHM of the beam).
     target_resolution : astropy.units.quantity.Quantity
         Final resolution element after smoothing.
+    unit : astropy.units.quantity.Quantity
+        Unit of spatial axes. Default is u.deg.
     verbose : bool
         Default is `True`. Writes diagnostic messages to the terminal.
     reproject : bool
         Default is `False`. Set to `True` if data should be reprojected to `header_projection`.
     header_projection : astropy.io.fits.Header
         Header of the FITS array to which data should be reprojected to.
+    preserve_flux : bool
+        Default is `True`. Preserves flux in the reprojection step. If `False`, surface brightness is preserved instead.
 
     Returns
     -------
@@ -608,7 +793,8 @@ def spatial_smoothing(data, header, save=False, path_to_output_file=None,
         Updated header of the FITS cube.
 
     """
-    check_if_value_is_none(save, path_to_output_file, 'save', 'path_to_output_file')
+    check_if_value_is_none(
+        save, path_to_output_file, 'save', 'path_to_output_file')
     check_if_all_values_are_none(current_resolution, target_resolution,
                                  'current_resolution', 'target_resolution')
 
@@ -624,9 +810,13 @@ def spatial_smoothing(data, header, save=False, path_to_output_file=None,
         target_resolution = 2*current_resolution
         warnings.warn('No smoothing resolution specified. Will smooth to a resolution of {}'.format(target_resolution))
 
-    current_resolution = current_resolution.to(u.deg)
-    target_resolution = target_resolution.to(u.deg)
-    pixel_scale = pixel_scale.to(u.deg)
+    current_resolution = current_resolution.to(unit)
+    target_resolution = target_resolution.to(unit)
+    pixel_scale = pixel_scale.to(unit)
+
+    output_projection, shape_out, flux_factor, comment = get_reproject_params(
+        pixel_scale, header_projection, reproject=reproject,
+        preserve_flux=preserve_flux)
 
     if 'BMAJ' in header.keys() and 'BMIN' in header.keys():
         if header['BMAJ'] != header['BMIN']:
@@ -642,23 +832,16 @@ def spatial_smoothing(data, header, save=False, path_to_output_file=None,
     kernel_std = (kernel_fwhm / fwhm_factor) / pixel_scale.value
     kernel = Gaussian2DKernel(kernel_std)
 
-    if reproject:
-        shape_out = (header_projection['NAXIS2'], header_projection['NAXIS1'])
-        header_projection_pp = correct_header(header_projection.copy())
-        header_projection_pp = change_wcs_header_reproject(
-            header_projection_pp, header_projection_pp, ppv=False)
-        output_projection = WCS(header_projection_pp)
-
     if data.ndim == 2:
         data = convolve(data, kernel, normalize_kernel=True)
         if reproject:
             data_reprojected = reproject_data(
-                (data, wcs_pp), output_projection, shape_out)
-            header = change_wcs_header_reproject(header, header_projection)
+                (data, wcs_pp), output_projection, shape_out, flux_factor)
     else:
         nSpectra = data.shape[0]
         if reproject:
-            data_reprojected = np.zeros((data.shape[0], shape_out[0], shape_out[1]))
+            data_reprojected = np.zeros(
+                (data.shape[0], shape_out[0], shape_out[1]))
         for i in tqdm(range(nSpectra)):
             channel = data[i, :, :]
             channel_smoothed = convolve(channel, kernel, normalize_kernel=True)
@@ -666,13 +849,15 @@ def spatial_smoothing(data, header, save=False, path_to_output_file=None,
             if reproject:
                 channel = data[i, :, :]
                 data_reprojected[i, :, :] = reproject_data(
-                    (channel, wcs_pp), output_projection, shape_out)
-        if reproject:
-            data = data_reprojected
-            header = change_wcs_header_reproject(header, header_projection)
+                    (channel, wcs_pp), output_projection, shape_out,
+                    flux_factor)
+
+    if reproject:
+        data = data_reprojected
+        header = change_wcs_header_reproject(header, header_projection)
 
     comments = ['spatially smoothed to a resolution of {}'.format(
-        target_resolution)]
+        target_resolution)] + comment
     header = update_header(header, comments=comments)
 
     if save:
@@ -683,7 +868,7 @@ def spatial_smoothing(data, header, save=False, path_to_output_file=None,
 
 def spectral_smoothing(data, header, save=False, path_to_output_file=None,
                        suffix=None, current_resolution=None,
-                       target_resolution=None, verbose=True):
+                       target_resolution=None, unit=u.m/u.s, verbose=True):
     """Smooth a FITS cube spectrally and update its header.
 
     Parameters
@@ -702,6 +887,8 @@ def spectral_smoothing(data, header, save=False, path_to_output_file=None,
         Current size of the spectral resolution element (velocity channel).
     target_resolution : astropy.units.quantity.Quantity
         Final spectral resolution element after smoothing.
+    unit : astropy.units.quantity.Quantity
+        Unit of spectral axes. Default is u.m/u.s.
     verbose : bool
         Default is `True`. Writes diagnostic messages to the terminal.
 
@@ -725,9 +912,9 @@ def spectral_smoothing(data, header, save=False, path_to_output_file=None,
         target_resolution = 2*current_resolution
         warnings.warn('No smoothing resolution specified. Will smooth to a resolution of {}'.format(target_resolution))
 
-    current_resolution = current_resolution.to(u.m/u.s)
-    target_resolution = target_resolution.to(u.m/u.s)
-    pixel_scale = pixel_scale.to(u.m/u.s)
+    current_resolution = current_resolution.to(unit)
+    target_resolution = target_resolution.to(unit)
+    pixel_scale = pixel_scale.to(unit)
 
     gaussian_width = (
         (target_resolution.value**2 - current_resolution.value**2)**0.5 /
@@ -845,14 +1032,8 @@ def add_noise(average_rms, path_to_file=None, hdu=None, save=False,
 
         save_fits(data, header, path_to_output_file, verbose=True)
 
-    if get_hdu:
-        return fits.PrimaryHDU(data, header)
-    elif get_data and (not get_header):
-        return data
-    elif (not get_data) and get_header:
-        return header
-    else:
-        return data, header
+    return return_hdu_options(
+        fits.PrimaryHDU(data, header), get_hdu=get_hdu, get_data=get_data, get_header=get_header)
 
 
 def transform_coordinates_to_pixel(coordinates, header):
@@ -946,14 +1127,8 @@ def make_subcube(slice_params, path_to_file=None, hdu=None, dtype='float32',
 
         save_fits(data, header, path_to_output_file, verbose=True)
 
-    if get_hdu:
-        return fits.PrimaryHDU(data, header)
-    elif get_data and (not get_header):
-        return data
-    elif (not get_data) and get_header:
-        return header
-    else:
-        return data, header
+    return return_hdu_options(
+        fits.PrimaryHDU(data, header), get_hdu=get_hdu, get_data=get_data, get_header=get_header)
 
 
 def clip_noise_below_threshold(data, snr=3, path_to_noise_map=None,
@@ -1140,6 +1315,7 @@ def get_moment_map(data, header, order=0, vel_unit=u.km/u.s):
     bunit = u.Unit('')
     velocity_bin = wcs.wcs.cdelt[2]
     spectral_channels = get_spectral_axis(header=header, to_unit=vel_unit)
+
     moment_data = np.zeros(data.shape[1:])
 
     def moment0(spectrum):
@@ -1147,13 +1323,13 @@ def get_moment_map(data, header, order=0, vel_unit=u.km/u.s):
 
     def moment1(spectrum):
         nanmask = np.logical_not(np.isnan(spectrum))
-        return np.nansum(spectral_channels[nanmask]) * spectrum[nanmask]
+        return np.nansum(spectral_channels[nanmask] * spectrum[nanmask]) / np.nansum(spectrum)
 
     def moment2(spectrum):
         nanmask = np.logical_not(np.isnan(spectrum))
         numerator = np.nansum(
             (spectral_channels[nanmask] - moment1(spectrum[nanmask]))**2 * spectrum[nanmask])
-        denominator = np.nansum(spectrum[nanmask])
+        denominator = np.nansum(spectrum)
         return np.sqrt(numerator / denominator)
 
     if order == 0:
@@ -1174,7 +1350,7 @@ def get_moment_map(data, header, order=0, vel_unit=u.km/u.s):
 def moment_map(hdu=None, path_to_file=None, slice_params=None,
                path_to_output_file=None,
                apply_noise_threshold=False, snr=3, order=0,
-               p_limit=0.02, pad_channels=5,
+               p_limit=0.02, pad_channels=5, comments=[],
                vel_unit=u.km/u.s, path_to_noise_map=None,
                save=False, get_hdu=True, use_ncpus=None,
                restore_nans=False, nan_mask=None, dtype='float32'):
@@ -1208,6 +1384,8 @@ def moment_map(hdu=None, path_to_file=None, slice_params=None,
         due to chance.
     pad_channels : int
         Number of channels by which an interval (low, upp) gets extended on both sides, resulting in (low - pad_channels, upp + pad_channels).
+    comments : list
+        Comments to add to the FITS header.
     vel_unit : astropy.units.quantity.Quantity
         Valid unit to which the values of the spectral axis will be converted.
     path_to_noise_map : str
@@ -1250,6 +1428,8 @@ def moment_map(hdu=None, path_to_file=None, slice_params=None,
                                           use_ncpus=use_ncpus)
 
     hdu = get_moment_map(data, header, order=order, vel_unit=vel_unit)
+    if comments:
+        hdu.header = update_header(hdu.header, comments=comments)
 
     # TODO: check if this is correct
     if restore_nans:
@@ -1324,7 +1504,7 @@ def get_pv_map(data, header, sum_over_axis=1, slice_z=slice(None, None),
 def pv_map(path_to_file=None, hdu=None, slice_params=None,
            path_to_output_file=None, path_to_noise_map=None,
            apply_noise_threshold=False, snr=3, p_limit=0.02, pad_channels=5,
-           sum_over_latitude=True, vel_unit=u.km/u.s,
+           sum_over_latitude=True, vel_unit=u.km/u.s, comments=[],
            save=False, get_hdu=True, use_ncpus=None, dtype='float32'):
     """Create a position-velocity map of the input data.
 
@@ -1353,6 +1533,8 @@ def pv_map(path_to_file=None, hdu=None, slice_params=None,
         Default is `True`. Integrate over latitude axis (NAXIS2) for the PV map.
     vel_unit : astropy.units.quantity.Quantity
         Valid unit to which the values of the spectral axis will be converted.
+    comments : list
+        Comments to add to the FITS header.
     save : bool
         Default is `False`. If set to `True`, the resulting FITS array is saved under 'path_to_output_file'.
     get_hdu : bool
@@ -1369,7 +1551,7 @@ def pv_map(path_to_file=None, hdu=None, slice_params=None,
         hdu = open_fits_file(path_to_file, get_hdu=True)
 
     if slice_params is not None:
-        data, header = make_subcube(slice_params, hdu=hdu)
+        hdu = make_subcube(slice_params, hdu=hdu, get_hdu=True)
         slice_params_pp = (slice_params[1], slice_params[2])
     else:
         slice_params_pp = (slice(None), slice(None))
@@ -1390,11 +1572,14 @@ def pv_map(path_to_file=None, hdu=None, slice_params=None,
     else:
         sum_over_axis = wcs.wcs.naxis - wcs.wcs.lng - 1
 
-    if slice_params:
-        slice_z = slice_params[0]
+    slice_z = slice(None, None)
+    # if slice_params:
+    #     slice_z = slice_params[0]
 
     hdu = get_pv_map(data, header, sum_over_axis=sum_over_axis,
                      slice_z=slice_z, vel_unit=vel_unit)
+    if comments:
+        hdu.header = update_header(hdu.header, comments=comments)
     data = hdu.data
     header = hdu.header
 
@@ -1409,7 +1594,55 @@ def pv_map(path_to_file=None, hdu=None, slice_params=None,
         return hdu
 
 
-def combine_fields(list_path_to_fields=[], ncols=3, nrows=2, save=False,
+def get_field_data(field):
+    """Get array data of the field.
+
+    Parameters
+    ----------
+    field : str or numpy.ndarray
+        Can be either an array or a filepath to a FITS file.
+
+    Returns
+    -------
+    data : numpy.ndarray
+        Array of the field.
+
+    """
+    if isinstance(field, str):
+        data = open_fits_file(
+            path_to_file=field, get_header=False, check_wcs=False)
+    else:
+        data = field
+    return data
+
+
+def get_field_header(field):
+    """Get FITS header of the field.
+
+    Returns generic FITS header in case `field` is a numpy.ndarray.
+
+    Parameters
+    ----------
+    field : str or numpy.ndarray
+        Can be either an array or a filepath to a FITS file.
+
+    Returns
+    -------
+    header : astropy.io.fits.header.Header
+        FITS header of the field.
+
+    """
+    if isinstance(field, str):
+        header = open_fits_file(
+            path_to_file=field, get_data=False, check_wcs=False)
+    else:
+        warnings.warn('No FITS header information available. Creating generic header.')
+        hdu = fits.PrimaryHDU(data=field)
+        header = hdu.header
+    return header
+
+
+def combine_fields(list_of_fields, ncols=3, nrows=2, save=False,
                    header=None, path_to_output_file=None, comments=[], verbose=True, dtype='float32'):
     """Combine FITS files to a mosaic by stacking them in the spatial coordinates.
 
@@ -1417,7 +1650,7 @@ def combine_fields(list_path_to_fields=[], ncols=3, nrows=2, save=False,
 
     Parameters
     ----------
-    list_path_to_fields : list
+    list_of_fields : list
         List of filepaths to the fields that should be mosaicked together.
     ncols : int
         Number of fields in the X direction.
@@ -1446,23 +1679,26 @@ def combine_fields(list_path_to_fields=[], ncols=3, nrows=2, save=False,
 
     combined_rows = []
 
+    header_single_field = False
+    if header is None:
+        header_single_field = True
+
     first = True
-    for i, path_to_file in enumerate(list_path_to_fields):
+    for i, field in enumerate(list_of_fields):
         if first:
-            combined_row = open_fits_file(
-                path_to_file=path_to_file, get_header=False, check_wcs=False)
+            data = get_field_data(field)
+            combined_row = data
             axes = range(combined_row.ndim)
             axis_1 = axes[-1]
             axis_2 = axes[-2]
             first = False
         else:
-            data = open_fits_file(
-                path_to_file=path_to_file, get_header=False, check_wcs=False)
+            data = get_field_data(field)
             combined_row = np.concatenate((combined_row, data), axis=axis_1)
 
         if i == 0 and header is None:
-            header = open_fits_file(
-                path_to_file=path_to_file, get_data=False, check_wcs=False)
+            header = get_field_header(field)
+
         elif (i + 1) % ncols == 0:
             combined_rows.append(combined_row)
             first = True
@@ -1475,6 +1711,11 @@ def combine_fields(list_path_to_fields=[], ncols=3, nrows=2, save=False,
             data_combined = np.concatenate(
                 (data_combined, combined_row), axis=axis_2)
 
+    if header_single_field:
+        for i in range(1, len(data_combined.shape) + 1):
+            index = len(data_combined.shape) - i
+            header['NAXIS' + str(i)] = data_combined.shape[index]
+
     if comments:
         header = update_header(header, comments=comments)
 
@@ -1482,4 +1723,4 @@ def combine_fields(list_path_to_fields=[], ncols=3, nrows=2, save=False,
         save_fits(data_combined.astype(dtype), header, path_to_output_file,
                   verbose=verbose)
 
-    return data, header
+    return data_combined, header

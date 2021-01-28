@@ -1,9 +1,12 @@
 """Functions that check the quality of the fit."""
 
 import numpy as np
+import warnings
 from scipy.stats import normaltest, kstest
 
 from .noise_estimation import determine_peaks
+from .output import format_warning
+warnings.showwarning = format_warning
 
 
 def determine_significance(amp, fwhm, rms):
@@ -122,17 +125,36 @@ def check_residual_for_normality(data, errors, mask=None,
         errors = np.ones(n_channels) * errors
     mask = check_mask(mask, n_channels)
     noise_spike_mask = check_mask(noise_spike_mask, n_channels)
-    ks_statistic, ks_pvalue = kstest(data[mask] / errors[mask], 'norm')
+    try:
+        ks_statistic, ks_pvalue = kstest(data[mask] / errors[mask], 'norm')
+    except ValueError:
+        warnings.warn('Normality test for residual unsuccessful. Setting pvalue to 0.')
+        ks_pvalue = 0
+
     if n_channels > 20:
-        statistic, pvalue = normaltest(data[noise_spike_mask])
-        statistic, pvalue_mask = normaltest(data[mask])
+        try:
+            statistic, pvalue = normaltest(data[noise_spike_mask])
+        except ValueError:
+            warnings.warn('Normality test for residual unsuccessful. Setting pvalue to 0.')
+            pvalue = 0
+
+        try:
+            statistic, pvalue_mask = normaltest(data[mask])
+        except ValueError:
+            warnings.warn('Normality test for residual unsuccessful. Setting pvalue to 0.')
+            pvalue_mask = 0
+        
         return min(ks_pvalue, pvalue, pvalue_mask)
 
     return ks_pvalue
 
 
-def negative_residuals(spectrum, residual, rms, neg_res_snr=3.):
+def negative_residuals(spectrum, residual, rms, neg_res_snr=3.,
+                       get_flags=False, fwhms=None, means=None):
     N_negative_residuals = 0
+
+    if get_flags:
+        flags = np.zeros(len(fwhms)).astype('bool')
 
     amp_vals, ranges = determine_peaks(
         residual, peak='negative', amp_threshold=neg_res_snr*rms)
@@ -144,5 +166,14 @@ def negative_residuals(spectrum, residual, rms, neg_res_snr=3.):
         for offset in offset_vals:
             if residual[offset] < (spectrum[offset] - neg_res_snr*rms):
                 N_negative_residuals += 1
+
+                if get_flags:
+                    lower = np.array(means) - np.array(fwhms) / 2
+                    upper = np.array(means) + np.array(fwhms) / 2
+
+                    flags += np.logical_and(lower < offset, upper > offset)
+
+    if get_flags:
+        return flags.astype('int')
 
     return N_negative_residuals

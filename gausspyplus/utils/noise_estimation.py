@@ -177,7 +177,7 @@ def correct_rms(average_rms=None, idx=None):
     if idx is not None:
         idxInfo = 'with index {} '.format(idx)
     if average_rms is not None:
-        warnings.warn('Could not determine noise for spectrum {} (baseline issue?). Assuminge average rms value of {}'.format(idxInfo, average_rms))
+        warnings.warn('Could not determine noise for spectrum {} (baseline issue?). Assuming average rms value of {}'.format(idxInfo, average_rms))
         return average_rms
     else:
         warnings.warn('Could not determine noise for spectrum {} (baseline issue?). Masking out spectrum.'.format(idxInfo))
@@ -269,7 +269,12 @@ def determine_noise(spectrum, max_consecutive_channels=14, pad_channels=5,
         if np.isnan(spectrum).any():
             # TODO: Case where spectrum contains nans and only positive values
             nans = np.isnan(spectrum)
-            error = get_rms_noise(spectrum[~nans], max_consecutive_channels=max_consecutive_channels, pad_channels=pad_channels, idx=idx, average_rms=average_rms)
+            error = get_rms_noise(
+                spectrum[~nans],
+                max_consecutive_channels=max_consecutive_channels,
+                pad_channels=pad_channels,
+                idx=idx,
+                average_rms=average_rms)
             spectrum[nans] = np.random.randn(len(spectrum[nans])) * error
 
         elif (spectrum >= 0).all():

@@ -7,6 +7,7 @@
 
 import multiprocessing
 import signal
+import sys
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
@@ -15,8 +16,15 @@ from .utils.noise_estimation import determine_noise
 from .prepare import GaussPyPrepare
 from .spatial_fitting import SpatialFitting
 from .training_set import GaussPyTrainingSet
+from .finalize import Finalize
 
 # ------------MULTIPROCESSING------------
+
+
+#  With Python 3.8 the start method for multiprocessing defaults to 'spawn' for
+#  MacOS systems. Here we change it back to 'fork' for compatibility reasons.
+if sys.version_info[:2] >= (3, 8):
+    multiprocessing.set_start_method('fork', force=True)
 
 
 def init_worker_ts():
@@ -56,6 +64,11 @@ def calculate_noise_gpy(i):
 
 def decompose_spectrum_ts(i):
     result = GaussPyTrainingSet.decompose(mp_params[0], mp_data[i], i)
+    return result
+
+
+def make_table(i):
+    result = Finalize.get_table_rows(mp_params[0], mp_data[i], i)
     return result
 
 
@@ -123,6 +136,8 @@ def func(use_ncpus=None, function='noise'):
             results_list = parallel_process(mp_ilist, refit_spectrum_1, n_jobs=use_ncpus)
         elif function == 'refit_phase_2':
             results_list = parallel_process(mp_ilist, refit_spectrum_2, n_jobs=use_ncpus)
+        elif function == 'make_table':
+            results_list = parallel_process(mp_ilist, make_table, n_jobs=use_ncpus)
         # results_list = p.map(determine_distance, tqdm(ilist))
     except KeyboardInterrupt:
         print("KeyboardInterrupt... quitting.")

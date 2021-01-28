@@ -8,12 +8,13 @@ import itertools
 import sys
 import numpy as np
 
+import lmfit
 from lmfit import minimize as lmfit_minimize
 from lmfit import Parameters
 
 from gausspyplus.utils.determine_intervals import check_if_intervals_contain_signal
 from gausspyplus.utils.fit_quality_checks import determine_significance, goodness_of_fit, check_residual_for_normality
-from gausspyplus.utils.gaussian_functions import combined_gaussian
+from gausspyplus.utils.gaussian_functions import combined_gaussian, area_of_gaussian
 from gausspyplus.utils.noise_estimation import determine_peaks, mask_channels
 
 
@@ -71,6 +72,8 @@ def errs_vec_from_lmfit(lmfit_params):
         errs = [value.stderr for value in list(lmfit_params.values())]
     else:
         errs = [value.stderr for value in lmfit_params.values()]
+    # TODO: estimate errors via bootstrapping instead of setting them to zero
+    errs = [0 if err is None else err for err in errs]
     return errs
 
 
@@ -128,13 +131,33 @@ def perform_least_squares_fit(vel, data, errors, params_fit, dct,
     lmfit_params = paramvec_to_lmfit(
         params_fit, max_amp=dct['max_amp'], max_fwhm=None,
         params_min=params_min, params_max=params_max)
-    result = lmfit_minimize(
-        objective_leastsq, lmfit_params, method='leastsq')
-    params_fit = vals_vec_from_lmfit(result.params)
-    params_errs = errs_vec_from_lmfit(result.params)
-    ncomps_fit = number_of_components(params_fit)
+    try:
+        result = lmfit_minimize(
+            objective_leastsq, lmfit_params, method='leastsq')
+        params_fit = vals_vec_from_lmfit(result.params)
+        params_errs = errs_vec_from_lmfit(result.params)
+        # TODO: implement bootstrapping method to estimate error in case
+        # error is None (when parameters are close to given bounds)
+        # if (len(params_errs) != 0) and (sum(params_errs) == 0):
+        #     print('okay')
+        #     mini = lmfit.Minimizer(objective_leastsq, lmfit_params)
+        #     for p in result.params:
+        #         result.params[p].stderr = abs(result.params[p].value * 0.1)
+        #     print('params_errs_old', params_errs)
+        #     ci = lmfit.conf_interval(mini, result)
+        #     print('Step 2')
+        #     params_errs = []
+        #     for p in ci:
+        #         min_val, val, max_val = ci[p][2][1], ci[p][3][1], ci[p][4][1]
+        #         std = max(abs(min_val - val), (abs(max_val - val)))
+        #         params_errs.append(std)
+        #     print('params_errs', params_errs)
 
-    return params_fit, params_errs, ncomps_fit
+        ncomps_fit = number_of_components(params_fit)
+
+        return params_fit, params_errs, ncomps_fit
+    except (ValueError, TypeError):
+        return [], [], 0
 
 
 def remove_components_from_sublists(lst, remove_indices):
@@ -156,6 +179,51 @@ def remove_components_from_sublists(lst, remove_indices):
         lst[idx] = [val for i, val in enumerate(sublst)
                     if i not in remove_indices]
     return lst
+
+
+def remove_components_above_max_ncomps(amps_fit, fwhms_fit, ncomps_max,
+                                       remove_indices, quality_control):
+    """Remove all fit components above specified limit.
+
+    Parameters
+    ----------
+    amps_fit : list
+        List containing amplitude values of all N fitted Gaussian components in the form [amp1, ..., ampN].
+    fwhms_fit : list
+        List containing FWHM values of all N fitted Gaussian components in the form [fwhm1, ..., fwhmN].
+    ncomps_max : int
+        Specified maximum number of fit components.
+    remove_indices : list
+        Indices of Gaussian components that should be removed from the fit solution.
+    quality_control : list
+        Log containing information about which in-built quality control parameters were not fulfilled (0: 'max_fwhm', 1: 'min_fwhm', 2: 'snr', 3: 'significance', 4: 'channel_range', 5: 'signal_range')
+
+    Returns
+    -------
+    remove_indices : list
+        Updated list with indices of Gaussian components that should be removed from the fit solution.
+    quality_control : list
+        Updated log containing information about which in-built quality control parameters were not fulfilled.
+
+    """
+    ncomps_fit = len(amps_fit)
+    if ncomps_fit <= ncomps_max:
+        return remove_indices, quality_control
+    integrated_intensities = area_of_gaussian(
+        np.array(amps_fit), np.array(fwhms_fit))
+    indices = np.array(range(len(integrated_intensities)))
+    sort_indices = np.argsort(integrated_intensities)
+
+    for index in indices[sort_indices]:
+        if index in remove_indices:
+            continue
+        remove_indices.append(index)
+        quality_control.append(6)
+        remaining_ncomps = ncomps_fit - len(remove_indices)
+        if remaining_ncomps <= ncomps_max:
+            break
+
+    return remove_indices, quality_control
 
 
 def check_params_fit(vel, data, errors, params_fit, params_errs, dct,
@@ -219,10 +287,6 @@ def check_params_fit(vel, data, errors, params_fit, params_errs, dct,
 
     rms = errors[0]
 
-    # exclude_means_outside_channel_range = True
-    # if 'exclude_means_outside_channel_range' in dct.keys():
-    #     exclude_means_outside_channel_range = dct['exclude_means_outside_channel_range']
-
     #  check if Gaussian components satisfy quality criteria
 
     remove_indices = []
@@ -239,13 +303,6 @@ def check_params_fit(vel, data, errors, params_fit, params_errs, dct,
                 remove_indices.append(i)
                 quality_control.append(1)
                 continue
-
-        # #  discard the Gaussian component if its mean position falls outside the covered spectral channels
-        # if exclude_means_outside_channel_range:
-        #     if (offset < np.min(vel)) or (offset > np.max(vel)):
-        #         remove_indices.append(i)
-        #         quality_control.append(1)
-        #         continue
 
         #  discard the Gaussian component if its amplitude value does not satisfy the required minimum S/N value or is larger than the limit
         if amp < dct['snr_fit']*rms:
@@ -264,19 +321,6 @@ def check_params_fit(vel, data, errors, params_fit, params_errs, dct,
             quality_control.append(3)
             continue
 
-        # #  If the Gaussian component was fit outside the determined signal ranges, we check the significance of signal feature fitted by the Gaussian component. We remove the Gaussian component if the signal feature does not satisfy the significance criterion.
-        # if signal_ranges:
-        #     if not any(low <= offset <= upp for low, upp in signal_ranges):
-        #         low = max(0, int(offset - fwhm))
-        #         upp = int(offset + fwhm) + 2
-        #
-        #         if not check_if_intervals_contain_signal(
-        #                 data, rms, [(low, upp)], snr=dct['snr'],
-        #                 significance=dct['significance']):
-        #             remove_indices.append(i)
-        #             quality_control.append(4)
-        #             continue
-
         #  If the Gaussian component was fit outside the determined signal ranges, we check the significance of signal feature fitted by the Gaussian component. We remove the Gaussian component if the signal feature does not satisfy the significance criterion.
         if (offset < np.min(vel)) or (offset > np.max(vel)):
             remove_indices.append(i)
@@ -294,6 +338,10 @@ def check_params_fit(vel, data, errors, params_fit, params_errs, dct,
                     remove_indices.append(i)
                     quality_control.append(5)
                     continue
+
+    if dct['max_ncomps'] is not None:
+        remove_indices, quality_control = remove_components_above_max_ncomps(
+            amps_fit, fwhms_fit, dct['max_ncomps'], remove_indices, quality_control)
 
     remove_indices = list(set(remove_indices))
 
@@ -319,7 +367,7 @@ def check_params_fit(vel, data, errors, params_fit, params_errs, dct,
             params_max = amps_max + fwhms_max + offsets_max
 
         params_fit, params_errs, ncomps_fit = perform_least_squares_fit(
-            vel, data, errors, params_fit, dct, params_min=None, params_max=None)
+            vel, data, errors, params_fit, dct, params_min=params_min, params_max=params_max)
 
         refit = True
 
@@ -654,7 +702,7 @@ def get_best_fit(vel, data, errors, params_fit, dct, first=False,
     ncomps_fit = number_of_components(params_fit)
 
     params_fit, params_errs, ncomps_fit = perform_least_squares_fit(
-        vel, data, errors, params_fit, dct, params_min=None, params_max=None)
+        vel, data, errors, params_fit, dct, params_min=params_min, params_max=params_max)
 
     #  check if fit components satisfy mandatory criteria
     if ncomps_fit > 0:
