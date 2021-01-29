@@ -682,6 +682,39 @@ class GaussPyDecompose(object):
 
         save_fits(data.astype(dtype), header, pathToFile, verbose=True)
 
+    def produce_int_map(self):
+        """Produce map of integrated intensity."""
+
+        data = np.empty((self.header['NAXIS2'], self.header['NAXIS1']))
+        data.fill(np.nan)
+
+        for idx, ((y, x), means, amps, fwhms) in enumerate(zip(
+                self.location, self.decomposition['means_fit'],
+                self.decomposition['amplitudes_fit'], self.decomposition['fwhms_fit'])):
+
+            if fwhms is not None:
+                inttot = 0.
+                if len(fwhms) > 0:
+                    for j in range(len(fwhms)):
+                        integrated_intensity = area_of_gaussian(
+                            amps[j], fwhms[j] * self.velocity_increment)
+                        inttot+=integrated_intensity
+
+                data[y,x] = inttot
+
+        comments = ['Integrated intensity of GaussPy fits']
+        header = change_header(self.header.copy(), format='pp',
+                               comments=comments)
+
+
+        filename = "{}{}_int_map.fits".format(
+            self.filename, self.suffix)
+        pathToFile = os.path.join(
+            os.path.dirname(self.dirname), 'gpy_maps', filename)
+
+        save_fits(data, header, pathToFile, verbose=False)
+
+
     def produce_velocity_dispersion_map(self, mode="average", dtype="float32"):
         """Produce map showing the maximum velocity dispersions."""
         say("\nmaking map of maximum velocity dispersions...", logger=self.logger)
